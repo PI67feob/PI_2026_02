@@ -1,3 +1,4 @@
+import 'package:caderno_fazenda/exceptions/dado_invalido_exception.dart';
 import 'package:caderno_fazenda/models/aplicador.dart';
 import 'package:caderno_fazenda/models/bomba_costal.dart';
 import 'package:caderno_fazenda/models/drone.dart';
@@ -128,6 +129,45 @@ void main() {
         BombaCostal().descreverCapacidade(),
         'Bomba costal: reservatório com capacidade não informada nas costas do operador',
       );
+    });
+  });
+
+  group('validacoes', () {
+    var recusa = throwsA(isA<DadoInvalidoException>());
+
+    test('capacidade zero, negativa ou invalida e recusada', () {
+      for (var valor in [0.0, -1.0, double.nan, double.infinity]) {
+        expect(() => Drone(capacidadeMaximaL: valor), recusa);
+        expect(() => Trator(capacidadeMaximaKg: valor), recusa);
+      }
+    });
+
+    test('capacidade ausente e permitida (a do trator nao foi levantada)', () {
+      expect(Trator().capacidadeMaximaL, isNull);
+      expect(Trator().capacidadeMaximaKg, isNull);
+    });
+
+    test('modelo em branco vira nulo e o texto e aparado', () {
+      expect(Drone(modelo: "   ").modelo, isNull);
+      expect(Drone(modelo: " DJI ").modelo, "DJI");
+    });
+
+    test('setters validam e aceitam nulo', () {
+      var aplicador = Drone(capacidadeMaximaL: 70);
+
+      aplicador.capacidadeMaximaL = 50;
+      expect(aplicador.capacidadeMaximaL, 50);
+
+      expect(() => aplicador.capacidadeMaximaL = -5, recusa);
+      expect(aplicador.capacidadeMaximaL, 50);
+
+      aplicador.capacidadeMaximaL = null;
+      expect(aplicador.capacidadeMaximaL, isNull);
+    });
+
+    test('id zero ou negativo e recusado', () {
+      expect(() => Trator(id: 0), recusa);
+      expect(() => BombaCostal(id: -2), recusa);
     });
   });
 }
