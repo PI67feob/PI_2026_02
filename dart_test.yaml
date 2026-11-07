@@ -1,0 +1,4 @@
+# Declara a tag usada pelos testes que falam com o MySQL de verdade.
+# Rode com: dart test -t mysql (com as variáveis DB_* exportadas).
+tags:
+  mysql:
