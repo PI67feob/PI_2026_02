@@ -1,0 +1,286 @@
+import 'package:caderno_fazenda/cli/formato.dart';
+import 'package:caderno_fazenda/cli/leitura.dart';
+import 'package:caderno_fazenda/cli/terminal.dart';
+import 'package:caderno_fazenda/exceptions/agrogestor_exception.dart';
+import 'package:caderno_fazenda/exceptions/persistencia_exception.dart';
+import 'package:caderno_fazenda/logica/calculo_desperdicio.dart';
+import 'package:caderno_fazenda/logica/calculos_calda.dart';
+import 'package:caderno_fazenda/models/entidade.dart';
+
+/// Uma linha de menu: o texto que aparece e o que acontece ao escolhê-la.
+class OpcaoMenu {
+  final String texto;
+  final Future<void> Function() acao;
+
+  const OpcaoMenu(this.texto, this.acao);
+}
+
+/// A conversa com o usuário: perguntas, listas de escolha e menus.
+///
+/// Tudo o que o menu pergunta passa por aqui, e é aqui que a resposta é
+/// conferida. Se o usuário digita algo que não serve (letra onde era número,
+/// id que não existe, data impossível), a pergunta se repete em vez de o
+/// programa quebrar. Em toda pergunta, Enter sem escrever nada devolve null:
+/// quem chamou decide se isso cancela a operação ou pula um campo opcional.
+class Interacao {
+  final Terminal _terminal;
+
+  Interacao(this._terminal);
+
+  /// Escreve uma linha.
+  void linha([String texto = '']) {
+    _terminal.escreverLinha(texto);
+  }
+
+  /// Escreve um título de seção, separado do que veio antes.
+  void secao(String texto) {
+    linha();
+    linha('=== $texto ===');
+  }
+
+  /// Faz uma pergunta e devolve a resposta sem espaços nas pontas, vazia se o
+  /// usuário só apertou Enter.
+  ///
+  /// Lança [EntradaEncerrada] se a entrada acabou.
+  String perguntar(String rotulo) {
+    _terminal.escrever('$rotulo: ');
+    final resposta = _terminal.lerLinha();
+    if (resposta == null) {
+      throw const EntradaEncerrada();
+    }
+    return resposta.trim();
+  }
+
+  /// Pergunta um texto livre. Devolve null se o usuário só apertou Enter.
+  String? perguntarTexto(String rotulo) {
+    final resposta = perguntar(rotulo);
+    return resposta.isEmpty ? null : resposta;
+  }
+
+  /// Pergunta um número, com vírgula ou ponto decimal.
+  ///
+  /// Repete a pergunta se a resposta não for número ou se não respeitar o
+  /// [minimo] (maior que o mínimo se [exclusivo], maior ou igual se não).
+  /// Devolve null se o usuário só apertou Enter.
+  double? perguntarNumero(
+    String rotulo, {
+    double? minimo,
+    bool exclusivo = false,
+  }) {
+    while (true) {
+      final resposta = perguntar(rotulo);
+      if (resposta.isEmpty) {
+        return null;
+      }
+      final valor = lerNumero(resposta);
+      if (valor == null) {
+        linha('  Número inválido. Use só dígitos, com vírgula ou ponto (2,8).');
+        continue;
+      }
+      if (minimo != null) {
+        final valido = exclusivo ? valor > minimo : valor >= minimo;
+        if (!valido) {
+          final regra = exclusivo ? 'maior que' : 'pelo menos';
+          linha('  O valor precisa ser $regra ${formatarCompacto(minimo)}.');
+          continue;
+        }
+      }
+      return valor;
+    }
+  }
+
+  /// Pergunta sim ou não. Enter sem resposta vale [padrao]. Repete a pergunta
+  /// se não entender a resposta.
+  bool confirmar(String rotulo, {bool padrao = false}) {
+    final dica = padrao ? 'S/n' : 's/N';
+    while (true) {
+      final resposta = perguntar('$rotulo ($dica)');
+      if (resposta.isEmpty) {
+        return padrao;
+      }
+      final sim = lerSimNao(resposta);
+      if (sim != null) {
+        return sim;
+      }
+      linha('  Responda com s (sim) ou n (não).');
+    }
+  }
+
+  /// Pergunta uma data como dia/mês/ano. Enter sem resposta vale [hoje].
+  /// Repete a pergunta se a data não existir.
+  DateTime perguntarData(String rotulo, DateTime hoje) {
+    final padrao = DateTime(hoje.year, hoje.month, hoje.day);
+    while (true) {
+      final resposta = perguntar('$rotulo [Enter = ${formatarData(padrao)}]');
+      if (resposta.isEmpty) {
+        return padrao;
+      }
+      final data = lerData(resposta);
+      if (data != null) {
+        return data;
+      }
+      linha(
+        '  Data inválida. Use dia/mês/ano, por exemplo ${formatarData(padrao)}.',
+      );
+    }
+  }
+
+  /// Lista os [itens] com o id de cada um e pede que o usuário digite o id de
+  /// um deles. Repete a pergunta se o id não estiver na lista. Devolve null
+  /// se o usuário só apertou Enter.
+  T? escolherPorId<T extends Entidade>(
+    String rotulo,
+    List<T> itens,
+    String Function(T item) descrever,
+  ) {
+    for (final item in itens) {
+      linha('  [${item.id}] ${descrever(item)}');
+    }
+    while (true) {
+      final resposta = perguntar(rotulo);
+      if (resposta.isEmpty) {
+        return null;
+      }
+      final id = int.tryParse(resposta);
+      final escolhido = id == null ? null : _acharPorId(itens, id);
+      if (escolhido != null) {
+        return escolhido;
+      }
+      linha('  Esse id não está na lista. Digite um dos números entre [ ].');
+    }
+  }
+
+  /// Igual a [escolherPorId], mas aceita vários ids de uma vez (`1,2`).
+  /// Repete a pergunta se algum id não estiver na lista ou aparecer duas vezes.
+  List<T>? escolherVariosPorId<T extends Entidade>(
+    String rotulo,
+    List<T> itens,
+    String Function(T item) descrever,
+  ) {
+    for (final item in itens) {
+      linha('  [${item.id}] ${descrever(item)}');
+    }
+    while (true) {
+      final resposta = perguntar(rotulo);
+      if (resposta.isEmpty) {
+        return null;
+      }
+      final ids = lerIds(resposta);
+      if (ids == null) {
+        linha('  Digite os ids separados por vírgula (por exemplo 1,2).');
+        continue;
+      }
+      if (ids.toSet().length != ids.length) {
+        linha('  Há um id repetido. Digite cada um só uma vez.');
+        continue;
+      }
+      final escolhidos = <T>[];
+      int? desconhecido;
+      for (final id in ids) {
+        final achado = _acharPorId(itens, id);
+        if (achado == null) {
+          desconhecido = id;
+          break;
+        }
+        escolhidos.add(achado);
+      }
+      if (desconhecido != null) {
+        linha('  O id $desconhecido não está na lista.');
+        continue;
+      }
+      return escolhidos;
+    }
+  }
+
+  /// Mostra as [opcoes] numeradas a partir de 1 e devolve a posição (a partir
+  /// de 0) da escolhida. Devolve null se o usuário só apertou Enter.
+  int? escolherOpcao(String rotulo, List<String> opcoes) {
+    for (var i = 0; i < opcoes.length; i++) {
+      linha('  ${i + 1}. ${opcoes[i]}');
+    }
+    while (true) {
+      final resposta = perguntar(rotulo);
+      if (resposta.isEmpty) {
+        return null;
+      }
+      final numero = int.tryParse(resposta);
+      if (numero != null && numero >= 1 && numero <= opcoes.length) {
+        return numero - 1;
+      }
+      linha('  Escolha um número de 1 a ${opcoes.length}.');
+    }
+  }
+
+  /// Mostra um menu e executa a opção escolhida, de novo e de novo, até o
+  /// usuário digitar 0.
+  ///
+  /// Cada opção roda dentro de [executarProtegido]: se der erro, a mensagem
+  /// aparece e o menu continua. A [dica] aparece logo abaixo do título.
+  Future<void> menu(
+    String titulo,
+    List<OpcaoMenu> opcoes, {
+    String saida = 'Voltar',
+    String? dica,
+  }) async {
+    while (true) {
+      secao(titulo);
+      if (dica != null) {
+        linha(dica);
+      }
+      for (var i = 0; i < opcoes.length; i++) {
+        linha('  ${i + 1}. ${opcoes[i].texto}');
+      }
+      linha('  0. $saida');
+      final resposta = perguntar('Escolha uma opção');
+      if (resposta == '0') {
+        return;
+      }
+      final numero = int.tryParse(resposta);
+      if (numero == null || numero < 1 || numero > opcoes.length) {
+        linha('Opção inválida. Digite o número de uma das opções.');
+        continue;
+      }
+      await executarProtegido(opcoes[numero - 1].acao);
+    }
+  }
+
+  /// Roda [acao] e, se o sistema recusar a operação, mostra o motivo em vez de
+  /// derrubar o programa.
+  ///
+  /// Trata os quatro grupos de erro que existem no projeto:
+  /// - [PersistenciaException]: falha ao falar com o banco;
+  /// - [AgroGestorException]: regra do domínio (dado inválido, capacidade
+  ///   excedida, registro que não existe...);
+  /// - [CaldaException] e [DesperdicioException]: as funções de cálculo da
+  ///   lógica de programação, que têm exceções próprias;
+  /// - qualquer outra [Exception], para o menu nunca fechar por um imprevisto.
+  ///
+  /// Só deixa passar a [EntradaEncerrada], que é o fim da conversa.
+  Future<void> executarProtegido(Future<void> Function() acao) async {
+    try {
+      await acao();
+    } on EntradaEncerrada {
+      rethrow;
+    } on PersistenciaException catch (erro) {
+      linha('\nNão foi possível acessar os dados: ${erro.mensagem}');
+      linha('Causa técnica: ${erro.causa}');
+    } on AgroGestorException catch (erro) {
+      linha('\nNão foi possível concluir: $erro');
+    } on CaldaException catch (erro) {
+      linha('\nErro de cálculo: ${erro.message}');
+    } on DesperdicioException catch (erro) {
+      linha('\nErro de cálculo: ${erro.message}');
+    } on Exception catch (erro) {
+      linha('\nErro inesperado: $erro');
+    }
+  }
+
+  T? _acharPorId<T extends Entidade>(List<T> itens, int id) {
+    for (final item in itens) {
+      if (item.id == id) {
+        return item;
+      }
+    }
+    return null;
+  }
+}

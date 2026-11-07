@@ -48,6 +48,8 @@ https://apppi-ten.vercel.app
 
 ```mermaid
 flowchart TD
+    MENU["bin/caderno.dart + lib/cli<br/>menu interativo"] --> SERV
+    MENU -. "calculadora" .-> LOG
     MAIN["bin/main.dart<br/>demonstração no terminal"] --> SERV
 
     subgraph SERV["lib/services: casos de uso"]
@@ -85,9 +87,11 @@ Quem conhece quem:
 ```
 .
 ├── bin/
+│   ├── caderno.dart            menu interativo (memória; MySQL com --mysql)
 │   ├── main.dart               demonstração no terminal (memória; MySQL com --mysql)
 │   └── testar_conexao.dart     confere a conexão com o MySQL
 ├── lib/
+│   ├── cli/                    o menu: conversa com o usuário, calculadora, dados de exemplo
 │   ├── exceptions/             exceções próprias do domínio
 │   ├── logica/                 funções puras: calculam e decidem
 │   ├── models/                 entidades do domínio
@@ -95,7 +99,8 @@ Quem conhece quem:
 │   │   ├── interfaces/         contratos de persistência (um por entidade)
 │   │   ├── memoria/            implementação provisória, em memória
 │   │   ├── mysql/              repositórios MySQL e a conexão (PI-023)
-│   │   └── configuracao_banco.dart   lê DB_HOST, DB_PORT... do ambiente
+│   │   ├── configuracao_banco.dart   lê DB_HOST, DB_PORT... do ambiente
+│   │   └── repositorios.dart   os seis repositórios montados (memória ou MySQL)
 │   └── services/               casos de uso: juntam models, lógica e repositórios
 ├── test/                       espelha a estrutura de lib/
 ├── banco/                      SQL (reservado; ver banco/RESERVADO_PARA_SQL.md)
@@ -169,6 +174,7 @@ Quem conhece quem:
 | `mysql/conexao_mysql.dart` | `ConexaoMysql`: abre a conexão com TLS (`global-bundle.pem`) e transforma qualquer falha do driver em `PersistenciaException`. |
 | `mysql/ajuda_mysql.dart` | Conversões (texto do banco para `int`, `double` e data) e o `INSERT`/`UPDATE` comum a todos os repositórios. |
 | `mysql/*_repository_mysql.dart` | Uma implementação MySQL por interface. `AplicacaoRepositoryMysql` grava a aplicação, os talhões e os insumos numa **transação**. |
+| `repositorios.dart` | `Repositorios`: os seis repositórios montados, em memória (`Repositorios.memoria()`) ou no MySQL (`Repositorios.mysql(banco)`). É onde o programa escolhe de onde vêm os dados. |
 
 ### `lib/services/`: os casos de uso
 
@@ -180,11 +186,24 @@ Quem conhece quem:
 | `dose_informada.dart` | `DoseInformada`: a dose **como foi anotada** na ficha (valor + unidade), antes de converter. |
 | `resultado_aplicacao.dart` | `ResultadoAplicacao` e `AvaliacaoInsumo`: o que o serviço calculou (volume, alerta de chuva, desperdício, status). |
 
+### `lib/cli/`: o menu interativo
+
+| Arquivo | Papel |
+|---|---|
+| `terminal.dart` | `Terminal`: a entrada e a saída de texto, como interface. `TerminalConsole` usa o teclado e a tela; os testes usam um terminal com respostas prontas. |
+| `interacao.dart` | `Interacao`: as perguntas (texto, número, data, sim ou não), as listas de escolha e o laço do menu. Se a resposta não serve, pergunta de novo; se o sistema recusa a operação, mostra o erro e o menu continua. |
+| `leitura.dart` | Transforma o que foi digitado em número (vírgula ou ponto), data (dia/mês/ano) e lista de ids. |
+| `formato.dart` | Número com vírgula, data e os textos das decisões da lógica (chuva, sobredose, capacidade). |
+| `menu_caderno.dart` | `MenuCaderno`: o menu principal. Cadastra pelos models e repositórios, registra aplicação pelo `AplicacaoService`, lista e resume. |
+| `menu_calculadora.dart` | `MenuCalculadora`: uma opção para cada função de `lib/logica`, chamada direto, sem serviço nem banco. |
+| `dados_exemplo.dart` | `garantirDadosExemplo`: cria, sem duplicar, os cadastros de exemplo da fazenda. A demonstração (`bin/main.dart`) usa o mesmo. |
+
 ### `test/`
 
 Os testes ficam em `test/`, na mesma estrutura de pastas de `lib/` (models, exceptions,
-logica, repositories e services). `test/ajuda/erros.dart` tem os auxiliares que capturam a
-mensagem de um erro, e `test/dados/dados_teste.dart` tem os dados de exemplo da equipe.
+logica, repositories, services e cli). `test/ajuda/erros.dart` tem os auxiliares que capturam a
+mensagem de um erro, `test/ajuda/terminal_simulado.dart` é o terminal com respostas prontas
+dos testes do menu, e `test/dados/dados_teste.dart` tem os dados de exemplo da equipe.
 
 ---
 
@@ -313,8 +332,10 @@ Requer Dart SDK 3.13 ou mais novo (conforme `pubspec.yaml`).
 
 ```bash
 dart pub get                    # baixa as dependências
-dart run bin/main.dart          # demonstração no terminal, dados em memória
-dart run bin/main.dart --mysql  # a mesma demonstração, gravando no MySQL (veja abaixo)
+dart run bin/caderno.dart          # menu interativo, dados em memória
+dart run bin/caderno.dart --mysql  # o mesmo menu, lendo e gravando no MySQL (veja abaixo)
+dart run bin/main.dart             # demonstração no terminal, dados em memória
+dart run bin/main.dart --mysql     # a mesma demonstração, gravando no MySQL
 dart test                       # todos os testes (os de banco são pulados sem DB_HOST)
 dart format .                   # formata o código
 dart analyze --fatal-infos      # análise estática: o CI exige zero avisos
@@ -326,7 +347,27 @@ dart analyze --fatal-infos      # análise estática: o CI exige zero avisos
 O CI do GitHub (`.github/workflows/ci.yml`) roda `dart pub get`, `dart format
 --output=none --set-exit-if-changed .`, `dart analyze --fatal-infos` e `dart test`.
 
-A demonstração em memória **não precisa de banco nem de variáveis de ambiente**.
+A demonstração e o menu em memória **não precisam de banco nem de variáveis de ambiente**.
+
+### Usando o menu
+
+`dart run bin/caderno.dart` abre o menu. Digite o número da opção e Enter. Em qualquer
+pergunta, Enter sem escrever nada cancela a operação (ou pula um campo opcional). Os números
+aceitam vírgula ou ponto (`2,8`) e as datas são dia/mês/ano.
+
+| Opção | O que faz |
+|---|---|
+| 1. Cadastros | Nova área, talhão, insumo, aplicador (trator, drone ou bomba costal) e operação. Também corrige os hectares de um talhão. |
+| 2. Registrar aplicação | O fluxo principal, passo a passo. Mostra um resumo para conferir, grava pelo `AplicacaoService` e imprime o volume de calda, as quantidades, o desperdício e os alertas de chuva e de sobredose. Se a calda não couber no aplicador, mostra o erro, não grava nada e deixa tentar outra taxa. |
+| 3. Consultas | Lista áreas e talhões, insumos, aplicadores, operações e aplicações (com o detalhe de cada uma). |
+| 4. Resumo de desperdício | Totais previstos, realizados e desperdiçados, separados em litros e quilos. |
+| 5. Calculadora | Uma opção para cada função de `lib/logica`: volume de calda, quantidade de produto, normalização e conversão de unidades, regras da chuva, da capacidade e da sobredose, desperdício e quantidade a comprar. Mostra também a mensagem de erro de cada função. |
+| 6. Parâmetros | Muda a tolerância de sobredose, o limite da chuva e o fator de compra. |
+| 7. Carregar dados de exemplo | Cria, sem duplicar, a área Sede, os talhões Chico1 e Chico2, o drone DJI, a operação Pulverização e os insumos Orkestra SC e Boro Super. |
+
+Quem nunca usou: opção **7** e depois a **2**. Sem `--mysql`, tudo fica na memória e some ao
+sair. Com `--mysql`, o que for cadastrado e registrado fica no banco compartilhado da equipe,
+então avise o time ou use nomes de teste.
 
 ### Rodando no MySQL
 
@@ -350,7 +391,8 @@ computador:
    ```
 
 5. Confira a conexão com `dart run bin/testar_conexao.dart` e depois rode
-   `dart run bin/main.dart --mysql`.
+   `dart run bin/main.dart --mysql` (demonstração) ou `dart run bin/caderno.dart --mysql`
+   (menu).
 
 Se der tempo esgotado, o seu IP não está liberado. Se der `Access denied`, confira usuário e
 senha no `.env`.
@@ -402,7 +444,9 @@ Um caminho de uns 5 minutos:
    funções **devolvem um enum** e quem lança a exceção é o serviço. Mostre a regra das 3
    horas e o que está PENDENTE.
 5. **Demonstração (1 min).** Rode `dart run bin/main.dart`. Aponte três coisas: a
-   conversão de 300 mL/ha para 0,300 L/ha, o alerta REAPLICAR e o erro de capacidade.
+   conversão de 300 mL/ha para 0,300 L/ha, o alerta REAPLICAR e o erro de capacidade. Se
+   quiser mostrar ao vivo, use o menu (`dart run bin/caderno.dart`): opção 7 carrega os
+   dados, opção 2 registra a aplicação e opção 5 mostra as funções de `lib/logica` uma a uma.
 6. **O SQL (30 s).** Mostre `lib/repositories/interfaces/` e diga: "o MySQL só implementa
    estas interfaces".
 
