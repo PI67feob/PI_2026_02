@@ -4,7 +4,7 @@
 | --- | --- |
 | **Data** | 06/11/2026 |
 | **Branches** | 4 branches em sequência (PI-015, PI-016, PI-020 e PI-022), todas continuação da `feat/PI-013-polimorfismo-aplicadores` (lista na seção Processo) |
-| **Autor** | João Hélio (escrito com apoio do Claude) |
+| **Autor** | João Hélio |
 | **Escopo** | Concluir POO e Lógica de Programação, deixar o ambiente pronto para o SQL e documentar |
 
 ## 1. Resumo
@@ -93,7 +93,7 @@ Nenhuma tabela definitiva foi criada. O SQL vem da frente de Modelagem de Dados.
 
 | Decisão | Por quê |
 | --- | --- |
-| Os 20 commits foram criados e publicados, **sem merge** | O autor é João Hélio e cada commit traz o Claude como coautor no rodapé. Nada foi mergeado na `main`: o caminho do time é um Pull Request por branch, revisado por outra frente. |
+| Os 20 commits foram criados e publicados, **sem merge** | O autor é João Hélio. Nada foi mergeado na `main`: o caminho do time é um Pull Request por branch, revisado por outra frente. |
 | Os commits vão em **4 branches em sequência**, todas continuação da `feat/PI-013-polimorfismo-aplicadores`, e não numa branch só | A regra do time é uma branch `feat/PI-xxx` por tarefa, e branch pequena é mais fácil de revisar. Cada uma sai da ponta da anterior (e a primeira, da 13, não da `main`) porque uma parte usa o código da outra. |
 | Os números das branches são **015, 016, 020 e 022** | Eles pulam as tarefas de banco (012, 014, 017 e 018) e de BI (019, 021, 024 e 025), que são de outras frentes. A 016 (alertas operacionais) e a 022 (fluxograma) são tarefas que este trabalho entrega. As tarefas 015 e 020 não constavam nos documentos de tarefas usados; se os números não corresponderem, basta renomear as branches. |
 | Dart SDK **não** foi instalado por contorno da política de rede | O ambiente bloqueia o download; não burlei a política. |

@@ -2,7 +2,7 @@
 
 | Campo | Conteúdo |
 | --- | --- |
-| **Autor** | João Hélio (escrito com apoio do Claude) |
+| **Autor** | João Hélio |
 | **Data** | 06/11/2026 |
 | **Requisito** | Lógica de Programação: fluxograma do percurso dos dados, da entrada até a visualização no BI, mostrando pontos de entrada e saída, decisões e etapas de tratamento (orientação do PI 2026-2; tarefa PI-022) |
 
