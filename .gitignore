@@ -9,5 +9,9 @@
 # Scripts SQL com senha real (ex.: banco/roles.local.sql, cópia do roles.sql)
 *.local.sql
 
+# Certificado público da AWS usado no TLS do MySQL (cada pessoa baixa o seu;
+# o comando está no README)
+global-bundle.pem
+
 # Sistema
 .DS_Store

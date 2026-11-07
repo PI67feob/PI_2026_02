@@ -12,9 +12,9 @@ tema definido para este módulo.
 
 ## Visão geral do código
 
-O **Caderno de Campo (AgroGestor)** é a parte em Dart do projeto. Hoje ele roda no terminal,
-**sem banco de dados**: os dados ficam em memória e o MySQL entra depois, no lugar dessa
-memória, sem mudar nenhuma regra de negócio.
+O **Caderno de Campo (AgroGestor)** é a parte em Dart do projeto. Roda no terminal e pode
+guardar os dados **em memória** (padrão, sem banco) ou no **MySQL** (`--mysql`). Trocar uma
+forma pela outra não muda nenhuma regra de negócio.
 
 O que o código já faz:
 
@@ -59,8 +59,8 @@ flowchart TD
     SERV --> MOD["lib/models<br/>entidades do domínio"]
     SERV --> IFACE["lib/repositories/interfaces<br/>contratos de persistência"]
 
-    IFACE -. "implementado hoje por" .-> MEM["repositories/memoria<br/>mock em memória"]
-    IFACE -. "será implementado por (PI-023)" .-> MYSQL["repositories/mysql<br/>reservada"]
+    IFACE -. "implementado por" .-> MEM["repositories/memoria<br/>mock em memória"]
+    IFACE -. "implementado por (PI-023)" .-> MYSQL["repositories/mysql<br/>MySQL"]
     MYSQL --> DB[("MySQL<br/>banco/")]
 
     EXC["lib/exceptions<br/>erros do domínio"] -. "lançadas pelos serviços" .-> SERV
@@ -85,7 +85,8 @@ Quem conhece quem:
 ```
 .
 ├── bin/
-│   └── main.dart               demonstração no terminal (dados em memória)
+│   ├── main.dart               demonstração no terminal (memória; MySQL com --mysql)
+│   └── testar_conexao.dart     confere a conexão com o MySQL
 ├── lib/
 │   ├── exceptions/             exceções próprias do domínio
 │   ├── logica/                 funções puras: calculam e decidem
@@ -93,7 +94,7 @@ Quem conhece quem:
 │   ├── repositories/
 │   │   ├── interfaces/         contratos de persistência (um por entidade)
 │   │   ├── memoria/            implementação provisória, em memória
-│   │   ├── mysql/              RESERVADA para o repositório MySQL (PI-023)
+│   │   ├── mysql/              repositórios MySQL e a conexão (PI-023)
 │   │   └── configuracao_banco.dart   lê DB_HOST, DB_PORT... do ambiente
 │   └── services/               casos de uso: juntam models, lógica e repositórios
 ├── test/                       espelha a estrutura de lib/
@@ -110,6 +111,7 @@ Quem conhece quem:
 │   ├── sprints/                relatórios de progresso
 │   └── reunioes/               atas das reuniões da equipe
 ├── .env.example                nomes das variáveis de ambiente (sem valores)
+├── dart_test.yaml              declara a tag `mysql`, dos testes que usam o banco
 └── pubspec.yaml
 ```
 
@@ -164,7 +166,9 @@ Quem conhece quem:
 | `interfaces/*_repository.dart` | Um contrato por entidade, com as buscas específicas (ex.: `TalhaoRepository.listarPorArea`). |
 | `memoria/repositorios_memoria.dart` | Implementação **provisória**: guarda em memória, gera ids e imita a regra `UNIQUE` do talhão. Tem a chave `bancoIndisponivel` para simular o banco fora do ar. |
 | `configuracao_banco.dart` | `ConfiguracaoBanco.doAmbiente()`: lê as variáveis de ambiente, confere e **nunca imprime a senha**. |
-| `mysql/` | Pasta **reservada** para o repositório MySQL (PI-023). |
+| `mysql/conexao_mysql.dart` | `ConexaoMysql`: abre a conexão com TLS (`global-bundle.pem`) e transforma qualquer falha do driver em `PersistenciaException`. |
+| `mysql/ajuda_mysql.dart` | Conversões (texto do banco para `int`, `double` e data) e o `INSERT`/`UPDATE` comum a todos os repositórios. |
+| `mysql/*_repository_mysql.dart` | Uma implementação MySQL por interface. `AplicacaoRepositoryMysql` grava a aplicação, os talhões e os insumos numa **transação**. |
 
 ### `lib/services/`: os casos de uso
 
@@ -308,11 +312,12 @@ Aplicações gravadas ao final: 1
 Requer Dart SDK 3.13 ou mais novo (conforme `pubspec.yaml`).
 
 ```bash
-dart pub get                  # baixa as dependências
-dart run bin/main.dart        # demonstração no terminal, sem banco
-dart test                     # todos os testes
-dart format .                 # formata o código
-dart analyze --fatal-infos    # análise estática: o CI exige zero avisos
+dart pub get                    # baixa as dependências
+dart run bin/main.dart          # demonstração no terminal, dados em memória
+dart run bin/main.dart --mysql  # a mesma demonstração, gravando no MySQL (veja abaixo)
+dart test                       # todos os testes (os de banco são pulados sem DB_HOST)
+dart format .                   # formata o código
+dart analyze --fatal-infos      # análise estática: o CI exige zero avisos
 ```
 
 > Use `dart run bin/main.dart`. O `dart run` sozinho procura `bin/caderno_fazenda.dart`,
@@ -321,26 +326,60 @@ dart analyze --fatal-infos    # análise estática: o CI exige zero avisos
 O CI do GitHub (`.github/workflows/ci.yml`) roda `dart pub get`, `dart format
 --output=none --set-exit-if-changed .`, `dart analyze --fatal-infos` e `dart test`.
 
-A demonstração **não precisa de banco nem de variáveis de ambiente**. As variáveis só
-passam a ser necessárias quando o repositório MySQL (PI-023) entrar.
+A demonstração em memória **não precisa de banco nem de variáveis de ambiente**.
+
+### Rodando no MySQL
+
+Com `--mysql`, a mesma demonstração grava no banco (MySQL 8.4 na AWS). Uma vez por
+computador:
+
+1. Copie `.env.example` para `.env` e preencha com os dados do banco (peça ao Diogo). A senha
+   fica só no seu `.env`, que o Git ignora.
+2. Baixe o certificado público da AWS na raiz do projeto (a conexão usa TLS; o arquivo
+   também é ignorado pelo Git):
+
+   ```bash
+   curl -O https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+   ```
+
+3. Peça para liberar o **seu IP público** no grupo de segurança do banco.
+4. Exporte as variáveis no terminal, porque o programa não lê o `.env` sozinho:
+
+   ```bash
+   set -a; source .env; set +a    # bash/zsh. No PowerShell: $env:DB_HOST = '...' (uma por variável)
+   ```
+
+5. Confira a conexão com `dart run bin/testar_conexao.dart` e depois rode
+   `dart run bin/main.dart --mysql`.
+
+Se der tempo esgotado, o seu IP não está liberado. Se der `Access denied`, confira usuário e
+senha no `.env`.
+
+A demonstração só cria o que ainda não existe (área, talhões, aplicador, operação e insumos)
+e registra uma aplicação nova a cada execução, então pode ser repetida. Os triggers de
+auditoria do banco registram as gravações em `historico_alteracoes`.
+
+Os testes que falam com o banco de verdade têm a tag `mysql` e só rodam com as variáveis
+`DB_*` exportadas (`dart test -t mysql`). Sem elas, como no CI, são pulados.
 
 ---
 
 ## Onde o SQL entra
 
-O SQL **não faz parte desta entrega** e vem da frente de Modelagem de Dados. O código já
-está pronto para recebê-lo:
+O SQL vem da frente de Modelagem de Dados. O código está pronto para ele e já roda no
+banco real:
 
 1. **Contratos prontos.** `lib/repositories/interfaces/` define o que o banco precisa
    oferecer (`salvar`, `buscarPorId`, `listarTodos`, `remover` e buscas específicas).
 2. **Mock no lugar do banco.** `lib/repositories/memoria/` implementa os mesmos contratos.
-3. **Lugar reservado para o MySQL.** `lib/repositories/mysql/` receberá as classes que
-   implementam as mesmas interfaces (PI-023). Os serviços não mudam.
+3. **Repositórios MySQL.** `lib/repositories/mysql/` tem as classes que implementam as
+   mesmas interfaces (PI-023). Os serviços não mudam.
 4. **Conexão por variáveis de ambiente.** O `.env.example` lista os nomes (`DB_HOST`,
    `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) e `ConfiguracaoBanco.doAmbiente()` as
    lê. **Nenhuma senha fica no código** e o `.env` está no `.gitignore`.
-5. **Pasta de SQL reservada.** `banco/` receberá `schema.sql`, `roles.sql`, `seeds/` e
-   `triggers.sql`. Nenhuma tabela definitiva foi escrita aqui.
+5. **Pasta de SQL.** `banco/` receberá `schema.sql`, `roles.sql`, `seeds/` e
+   `triggers.sql`. O banco da AWS já tem as tabelas e os triggers, mas esses arquivos
+   ainda precisam ser versionados aqui.
 
 O mapa entre tabelas, classes e repositórios, as regras que o repositório MySQL precisa
 respeitar (como gravar a aplicação em **transação**) e os pontos de atenção para o DBA
@@ -389,9 +428,12 @@ Perguntas que podem aparecer:
 - **Capacidade do trator:** ainda não foi levantada (fica nula).
 - **Aplicação com mais de uma carga:** como lançar ainda não foi combinado com a fazenda.
 - **Nomes do banco:** a PI-012 manda `agrogestor` e chave `id`; os scripts de seed recebidos
-  usam `caderno_fazenda` e `id_<tabela>`. O grupo precisa escolher um padrão.
-- **Repositório MySQL, `schema.sql`, seeds e triggers:** são de outras frentes (PI-012,
-  PI-014, PI-017, PI-018 e PI-023).
+  usam `caderno_fazenda` e `id_<tabela>`. O grupo precisa escolher um padrão. Hoje o
+  repositório MySQL segue o do banco (`caderno_fazenda`, `id_<tabela>`); se o padrão mudar,
+  só `lib/repositories/mysql/` precisa ser ajustado.
+- **Scripts do banco no repositório:** o banco da AWS já tem as tabelas e os triggers
+  (PI-012 e PI-018), mas `schema.sql`, `roles.sql`, seeds e `triggers.sql` (PI-012, PI-014,
+  PI-017 e PI-018) ainda precisam ser versionados em `banco/`.
 - **Entidades sem classe Dart:** compra, item de compra e histórico de alterações
   (o histórico é gerado por triggers).
 - **Arquivos de modelo do `dart create`** (`bin/pi.dart`, `lib/pi.dart`, `test/pi_test.dart`)
@@ -412,7 +454,7 @@ e passar a tarde resolvendo conflito de merge.
 ```
 lib/models/          entidades: Area, Talhao, Insumo, Operacao, Aplicador, Aplicacao
 lib/services/        regras de negócio (casos de uso)
-lib/repositories/    acesso a dados: interfaces, mock em memória e, depois, MySQL
+lib/repositories/    acesso a dados: interfaces, mock em memória e MySQL
 lib/exceptions/      exceções próprias do domínio
 test/                testes das regras
 ```
