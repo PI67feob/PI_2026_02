@@ -1,3 +1,6 @@
+import 'package:caderno_fazenda/models/entidade.dart';
+import 'package:caderno_fazenda/models/validacoes.dart';
+
 /// Equipamento usado para aplicar calda nos talhões.
 ///
 /// A fazenda tem três tipos de aplicador: `Trator`, `Drone` e `BombaCostal`.
@@ -5,20 +8,46 @@
 /// implementa [descreverCapacidade] e [origemDoRegistro] do seu jeito.
 ///
 /// A capacidade é um limite máximo, não um volume fixo: o tanque nem sempre é
-/// cheio. A regra "volume acima da capacidade" fica na frente de Lógica; aqui
-/// o aplicador só expõe a sua capacidade máxima.
-abstract class Aplicador {
-  int? id;
-  String? modelo;
-  double? capacidadeMaximaL;
-  double? capacidadeMaximaKg;
+/// cheio. A regra "volume acima da capacidade" fica na frente de Lógica
+/// (`avaliarCapacidade`) e é aplicada pelo serviço; aqui o aplicador só expõe a
+/// sua capacidade máxima e garante que, quando informada, ela é maior que zero.
+/// A capacidade pode ficar nula: a do trator ainda não foi levantada.
+abstract class Aplicador extends Entidade {
+  String? _modelo;
+  double? _capacidadeMaximaL;
+  double? _capacidadeMaximaKg;
 
   Aplicador({
-    this.id,
-    this.modelo,
-    this.capacidadeMaximaL,
-    this.capacidadeMaximaKg,
-  });
+    super.id,
+    String? modelo,
+    double? capacidadeMaximaL,
+    double? capacidadeMaximaKg,
+  }) {
+    this.modelo = modelo;
+    this.capacidadeMaximaL = capacidadeMaximaL;
+    this.capacidadeMaximaKg = capacidadeMaximaKg;
+  }
+
+  /// Modelo ou número do aplicador (ex.: `DJI`); nulo se não foi informado.
+  String? get modelo => _modelo;
+
+  set modelo(String? valor) {
+    _modelo = textoOpcional(valor);
+  }
+
+  /// Capacidade máxima em litros; nula quando ainda não foi levantada.
+  double? get capacidadeMaximaL => _capacidadeMaximaL;
+
+  set capacidadeMaximaL(double? valor) {
+    _capacidadeMaximaL = positivoOuNulo(valor, 'capacidade máxima (L)');
+  }
+
+  /// Capacidade máxima em quilos; nula quando ainda não foi levantada.
+  double? get capacidadeMaximaKg => _capacidadeMaximaKg;
+
+  set capacidadeMaximaKg(double? valor) {
+    _capacidadeMaximaKg = positivoOuNulo(valor, 'capacidade máxima (kg)');
+  }
 
   /// Tipo do aplicador, com o mesmo texto usado no banco:
   /// `trator`, `drone` ou `bomba costal`.
