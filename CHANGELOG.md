@@ -22,6 +22,14 @@
 - `dart_test.yaml` com a tag `mysql` e teste de integração do `AreaRepositoryMysql`, que só
   roda com as variáveis `DB_*` exportadas (sem elas é pulado, e o CI segue sem banco).
 - Testes das funções de conversão do repositório MySQL (`ajuda_mysql_test.dart`).
+- Menu interativo em `bin/caderno.dart` (código em `lib/cli/`): cadastros, registro de
+  aplicação, consultas, resumo de desperdício, calculadora com uma opção para cada função de
+  `lib/logica`, parâmetros operacionais e dados de exemplo. Roda em memória e, com `--mysql`,
+  no banco.
+- `Repositorios` (`lib/repositories/repositorios.dart`): monta os seis repositórios, em
+  memória ou no MySQL. `garantirDadosExemplo` (`lib/cli/dados_exemplo.dart`): cria os
+  cadastros de exemplo sem duplicar.
+- Testes do menu em `test/cli/`, com o `TerminalSimulado` (terminal com respostas prontas).
 - Testes para tudo o que foi adicionado.
 
 ### Alterado
@@ -40,6 +48,10 @@
   versão atual.
 - `README.md` e `banco/RESERVADO_PARA_SQL.md`: passam a descrever o repositório MySQL,
   como rodar com `--mysql` e o mapa entre as tabelas do banco e as classes.
+- `bin/main.dart` passou a usar `Repositorios`, `garantirDadosExemplo` e as funções de
+  `lib/cli/formato.dart`, em vez de ter cópias próprias. A saída da demonstração não mudou.
+- `README.md`: seção "Usando o menu" e o menu na estrutura, na arquitetura e no roteiro da
+  apresentação.
 
 ## 1.0.0
 
