@@ -1,5 +1,11 @@
 # Base escolhida para a normalizacao
 
+> **Atenção: documento desatualizado.** Ele descreve uma única base (L/ha),
+> mas o código hoje usa duas: **L/ha** para produto líquido e **kg/ha** para
+> produto sólido. A versão atual está em
+> [`base_normalizacao.md`](base_normalizacao.md). O percurso completo do dado,
+> da ficha até o dashboard, está em [`fluxo_dados.md`](fluxo_dados.md).
+
 A base escolhida e **L/ha**.
 
 Ela foi escolhida porque a area da aplicacao e expressa em hectares e as
