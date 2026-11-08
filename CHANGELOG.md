@@ -99,6 +99,14 @@
   (`bin/main.dart`) continua mostrando o `obterDados()` do model.
 - `ManutencaoService.corrigirAplicacao` passa a exigir as horas até a chuva e o motivo
   (`null` tira o valor), como já era com a observação.
+- Interface do menu mais espaçada e interativa, sem cores: títulos em moldura, espaço entre
+  os blocos das listas e dos resultados, "Passo 1 de 6" até "Passo 6 de 6" no registro de
+  aplicação, `[ok]` nas mensagens de sucesso e `[!]` nos avisos e recusas, e uma tela de
+  abertura que explica como usar. Com o teclado ligado, o menu espera um Enter depois de cada
+  opção ("Aperte Enter para voltar ao menu...") para o resultado não sumir; `--sem-pausa`
+  desliga a espera, e com as respostas vindas de arquivo ou pipe ela não acontece. Uma opção
+  inválida só pergunta de novo, sem desenhar o menu outra vez. Os testes que procuravam
+  `=== TÍTULO ===` passaram a procurar o título na moldura.
 
 ### Corrigido
 

@@ -27,6 +27,9 @@ import 'package:caderno_fazenda/services/talhao_service.dart';
 /// agrônomo.
 const double toleranciaDeExemplo = 10;
 
+/// Quantos passos tem o registro de uma aplicação, para o "Passo 2 de 6".
+const int _passosDoRegistro = 6;
+
 /// As unidades em que uma dose pode ser digitada, como estão na ficha de papel.
 const List<String> _unidadesDeDose = [
   'mL/ha',
@@ -58,12 +61,16 @@ class MenuCaderno {
   /// Os [parametros] começam com a [toleranciaDeExemplo], o limite de 3 horas
   /// de chuva e o fator de compra de 0,95, e o usuário pode alterá-los no
   /// menu. O relógio [agora] existe para os testes fixarem a data de hoje.
+  ///
+  /// Com [pausas] ligadas, o menu espera um Enter depois de cada opção, para o
+  /// resultado ficar na tela até o usuário terminar de ler.
   MenuCaderno(
     this._repositorios,
     Terminal terminal, {
     ParametrosOperacionais? parametros,
     DateTime Function()? agora,
-  }) : _ui = Interacao(terminal),
+    bool pausas = false,
+  }) : _ui = Interacao(terminal, pausas: pausas),
        _agora = agora ?? DateTime.now,
        _parametros =
            parametros ??
@@ -123,21 +130,27 @@ class MenuCaderno {
           () => _manutencao.excluir(),
         ),
       ], saida: 'Sair');
-      _ui.linha('\nAté logo!');
+      _ui.linha('\nAté logo!\n');
     } on EntradaEncerrada {
-      _ui.linha('\n\nA entrada de texto acabou. Até logo!');
+      _ui.linha('\n\nA entrada de texto acabou. Até logo!\n');
     }
   }
 
   void _boasVindas() {
+    _ui.linha();
     _ui.linha('==================================================');
     _ui.linha('  CADERNO DE CAMPO - controle de insumos agrícolas');
     _ui.linha('  Dados: ${_repositorios.origem}');
     _ui.linha('==================================================');
     if (!_repositorios.persistente) {
+      _ui.linha();
       _ui.linha('Atenção: nada fica salvo, tudo some quando você sair.');
       _ui.linha('Para gravar no banco: dart run bin/caderno.dart --mysql');
     }
+    _ui.linha();
+    _ui.linha('Como usar: digite o número da opção e aperte Enter.');
+    _ui.linha('Em qualquer pergunta, Enter em branco cancela ou pula.');
+    _ui.linha();
     _ui.linha('Primeira vez? Use "Carregar dados de exemplo" (opção 7).');
     final tolerancia = formatarCompacto(
       _parametros.toleranciaSobredosePercentual,
@@ -153,7 +166,7 @@ class MenuCaderno {
     final tolerancia = formatarCompacto(p.toleranciaSobredosePercentual);
     final chuva = formatarCompacto(p.limiteChuvaHoras);
     final compra = formatarCompacto(p.fatorCompra, 2);
-    _ui.linha('Parâmetros em uso:');
+    _ui.subtitulo('Parâmetros em uso');
     _ui.linha(
       '  - tolerância de sobredose: $tolerancia% '
       '(só um exemplo: quem define é o agrônomo)',
@@ -179,7 +192,9 @@ class MenuCaderno {
         ),
         OpcaoMenu('Nova operação', _novaOperacao),
       ],
-      dica: 'Enter em branco cancela. Para corrigir ou excluir, use as opções 8 e 9 do menu principal.',
+      dica:
+          'Enter em branco cancela. Para corrigir ou excluir, use as opções 8 e 9\n'
+          'do menu principal.',
     );
   }
 
@@ -190,20 +205,20 @@ class MenuCaderno {
     }
     final existente = await _repositorios.areas.buscarPorNome(nome);
     if (existente != null) {
-      _ui.linha('Já existe a área "${existente.nome}" (id ${existente.id}).');
+      _ui.aviso('Já existe a área "${existente.nome}" (id ${existente.id}).');
       return;
     }
     final area = await _repositorios.areas.salvar(Area(nome: nome));
-    _ui.linha('Área cadastrada: [${area.id}] ${area.nome}');
+    _ui.sucesso('Área cadastrada: [${area.id}] ${area.nome}');
   }
 
   Future<void> _novoTalhao() async {
     final areas = await _repositorios.areas.listarTodos();
     if (areas.isEmpty) {
-      _ui.linha('Cadastre uma área antes de criar o talhão.');
+      _ui.aviso('Cadastre uma área antes de criar o talhão.');
       return;
     }
-    _ui.linha('Áreas:');
+    _ui.subtitulo('Áreas');
     final area = _ui.escolherPorId('Id da área', areas, (a) => a.nome);
     if (area == null) {
       return;
@@ -225,7 +240,7 @@ class MenuCaderno {
       nome: nome,
       hectares: hectares,
     );
-    _ui.linha('Talhão cadastrado: [${talhao.id}] ${descreverTalhao(talhao)}');
+    _ui.sucesso('Talhão cadastrado: [${talhao.id}] ${descreverTalhao(talhao)}');
   }
 
   Future<void> _novoInsumo() async {
@@ -241,7 +256,7 @@ class MenuCaderno {
     final mesmoTipo = await _repositorios.insumos.listarPorTipo(tipo);
     for (final existente in mesmoTipo) {
       if (_mesmoTexto(existente.nome, nome)) {
-        _ui.linha(
+        _ui.aviso(
           'Já existe o insumo "${existente.nome}" (id ${existente.id}).',
         );
         return;
@@ -250,12 +265,12 @@ class MenuCaderno {
     final insumo = await _repositorios.insumos.salvar(
       Insumo(nome: nome, tipo: tipo, marca: marca),
     );
-    _ui.linha('Insumo cadastrado: [${insumo.id}] ${descreverInsumo(insumo)}');
+    _ui.sucesso('Insumo cadastrado: [${insumo.id}] ${descreverInsumo(insumo)}');
   }
 
   Future<void> _novoAplicador() async {
     const tipos = ['trator', 'drone', 'bomba costal'];
-    _ui.linha('Tipo de aplicador:');
+    _ui.subtitulo('Tipo de aplicador');
     final indice = _ui.escolherOpcao('Tipo', [
       'Trator',
       'Drone',
@@ -283,7 +298,7 @@ class MenuCaderno {
       capacidadeMaximaKg: quilos,
     );
     final salvo = await _repositorios.aplicadores.salvar(aplicador);
-    _ui.linha(
+    _ui.sucesso(
       'Aplicador cadastrado: [${salvo.id}] ${salvo.descreverCapacidade()}',
     );
   }
@@ -299,7 +314,7 @@ class MenuCaderno {
       descricao,
     );
     if (existente != null) {
-      _ui.linha(
+      _ui.aviso(
         'Já existe a operação "${existente.descricao}" (id ${existente.id}).',
       );
       return;
@@ -307,7 +322,7 @@ class MenuCaderno {
     final operacao = await _repositorios.operacoes.salvar(
       Operacao(descricao: descricao),
     );
-    _ui.linha('Operação cadastrada: [${operacao.id}] ${operacao.descricao}');
+    _ui.sucesso('Operação cadastrada: [${operacao.id}] ${operacao.descricao}');
   }
 
   // ---------------------------------------------------------------------
@@ -327,15 +342,18 @@ class MenuCaderno {
       if (insumos.isEmpty) 'insumo',
     ];
     if (faltam.isNotEmpty) {
-      _ui.linha('Antes de registrar, cadastre: ${faltam.join(', ')}.');
+      _ui.aviso('Antes de registrar, cadastre: ${faltam.join(', ')}.');
       _ui.linha('Use "Cadastros" ou "Carregar dados de exemplo".');
       return;
     }
 
     _ui.secao('REGISTRAR APLICAÇÃO');
     _ui.linha('Enter em branco cancela e volta ao menu.');
+    _ui.linha(
+      'São $_passosDoRegistro passos; no fim você confere tudo antes de gravar.',
+    );
 
-    _ui.linha('\nOperação:');
+    _ui.etapa(1, _passosDoRegistro, 'Operação');
     final operacao = _ui.escolherPorId(
       'Id da operação',
       operacoes,
@@ -345,7 +363,7 @@ class MenuCaderno {
       return;
     }
 
-    _ui.linha('\nAplicador:');
+    _ui.etapa(2, _passosDoRegistro, 'Aplicador');
     final aplicador = _ui.escolherPorId(
       'Id do aplicador',
       aplicadores,
@@ -355,7 +373,10 @@ class MenuCaderno {
       return;
     }
 
-    _ui.linha('\nTalhões (um ou mais ids, separados por vírgula):');
+    _ui.etapa(3, _passosDoRegistro, 'Talhões');
+    _ui.linha(
+      'Pode escolher mais de um: separe os ids por vírgula (ex.: 1,2).',
+    );
     final escolhidos = _ui.escolherVariosPorId(
       'Ids dos talhões',
       talhoes,
@@ -368,9 +389,9 @@ class MenuCaderno {
     for (final talhao in escolhidos) {
       areaTotal += talhao.hectares;
     }
-    _ui.linha('  Área total: ${formatarNumero(areaTotal)} ha');
+    _ui.linha('\n  Área total: ${formatarNumero(areaTotal)} ha');
 
-    _ui.linha();
+    _ui.etapa(4, _passosDoRegistro, 'Data e taxa de aplicação');
     final data = _ui.perguntarData('Data da aplicação', _agora());
     final taxa = _ui.perguntarNumero(
       'Taxa de aplicação da calda (L/ha)',
@@ -390,7 +411,7 @@ class MenuCaderno {
         _ui.linha('\nTodos os insumos cadastrados já foram adicionados.');
         break;
       }
-      _ui.linha('\nInsumo ${itens.length + 1}:');
+      _ui.etapa(5, _passosDoRegistro, 'Insumo ${itens.length + 1}');
       final insumo = _ui.escolherPorId('Id do insumo', livres, descreverInsumo);
       if (insumo == null) {
         return;
@@ -405,7 +426,7 @@ class MenuCaderno {
       }
     }
 
-    _ui.linha();
+    _ui.etapa(6, _passosDoRegistro, 'Chuva e imprevistos');
     final horas = _ui.perguntarNumero(
       'Horas entre o fim da aplicação e a chuva [Enter = sem informação]',
       minimo: 0,
@@ -448,8 +469,9 @@ class MenuCaderno {
       motivo: motivo,
       observacao: observacao,
     );
+    _ui.linha();
     if (!_ui.confirmar('Gravar esta aplicação?', padrao: true)) {
-      _ui.linha('Cancelado. Nada foi gravado.');
+      _ui.aviso('Cancelado. Nada foi gravado.');
       return;
     }
 
@@ -468,7 +490,7 @@ class MenuCaderno {
   }
 
   _ItemDigitado? _perguntarDose(Insumo insumo) {
-    _ui.linha('  Unidade em que a dose está anotada na ficha:');
+    _ui.linha('\n  Unidade em que a dose está anotada na ficha:');
     final indice = _ui.escolherOpcao('Unidade', _unidadesDeDose);
     if (indice == null) {
       return null;
@@ -515,6 +537,7 @@ class MenuCaderno {
     final nomes = talhoes.map((t) => t.nome).join(', ');
     _ui.linha('  Talhões: $nomes (${formatarNumero(areaTotal)} ha)');
     _ui.linha('  Taxa de aplicação: ${formatarCompacto(taxa)} L/ha');
+    _ui.linha();
     _ui.linha('  Insumos:');
     for (final item in itens) {
       final dose = item.dose;
@@ -528,6 +551,7 @@ class MenuCaderno {
         '$realizadaTexto',
       );
     }
+    _ui.linha();
     _mostrarCarga(
       aplicador: aplicador,
       volumeL: carga.volumeCaldaL,
@@ -535,6 +559,10 @@ class MenuCaderno {
       massaKg: carga.massaProdutosKg,
       viagensSolidos: carga.viagensSolidos,
     );
+    final temExtras = horas != null || motivo != null || observacao != null;
+    if (temExtras) {
+      _ui.linha();
+    }
     if (horas != null) {
       _ui.linha('  Chuva: ${formatarCompacto(horas)} h depois da aplicação');
     }
@@ -585,6 +613,7 @@ class MenuCaderno {
     _ui.linha('  Aplicador: ${aplicador.descreverCapacidade()}');
     _ui.linha('  Registrado em: ${aplicador.origemDoRegistro()}');
     _ui.linha('  Área total: ${formatarNumero(aplicacao.areaTotalHa)} ha');
+    _ui.linha();
     _mostrarCarga(
       aplicador: aplicador,
       volumeL: resultado.volumeCaldaL,
@@ -592,6 +621,7 @@ class MenuCaderno {
       massaKg: resultado.massaProdutosKg,
       viagensSolidos: resultado.viagensSolidos,
     );
+    _ui.linha();
     _ui.linha('  Chuva: ${descreverChuva(resultado.chuva)}');
     final motivo = aplicacao.motivoReaplicacao;
     if (motivo != null) {
@@ -609,6 +639,7 @@ class MenuCaderno {
       final item = avaliacao.item;
       final unidade = item.unidade.texto;
       final medida = unidade.split('/').first;
+      _ui.linha();
       _ui.linha('  - ${item.insumo.nome}');
       _ui.linha(
         '      dose prevista: ${formatarNumero(item.dosePrevista, 3)} $unidade',
@@ -652,6 +683,7 @@ class MenuCaderno {
       }
     }
 
+    _ui.linha();
     if (alertas.isEmpty) {
       _ui.linha('  Alertas: nenhum.');
     } else {
@@ -680,9 +712,10 @@ class MenuCaderno {
   Future<void> _listarAreasETalhoes() async {
     final areas = await _repositorios.areas.listarTodos();
     if (areas.isEmpty) {
-      _ui.linha('Nenhuma área cadastrada.');
+      _ui.aviso('Nenhuma área cadastrada.');
       return;
     }
+    _ui.subtitulo('Áreas e talhões');
     for (final area in areas) {
       final talhoes = await _repositorios.talhoes.listarPorArea(area.id!);
       var total = 0.0;
@@ -691,8 +724,9 @@ class MenuCaderno {
       }
       final quantidade = talhoes.length;
       final palavra = plural(quantidade, 'talhão', 'talhões');
+      _ui.linha();
       _ui.linha(
-        '[${area.id}] ${area.nome} - $quantidade $palavra, '
+        '  [${area.id}] ${area.nome} - $quantidade $palavra, '
         '${formatarNumero(total)} ha',
       );
       for (final talhao in talhoes) {
@@ -707,44 +741,49 @@ class MenuCaderno {
   Future<void> _listarInsumos() async {
     final insumos = await _repositorios.insumos.listarTodos();
     if (insumos.isEmpty) {
-      _ui.linha('Nenhum insumo cadastrado.');
+      _ui.aviso('Nenhum insumo cadastrado.');
       return;
     }
+    _ui.subtitulo('Insumos');
     for (final insumo in insumos) {
-      _ui.linha('[${insumo.id}] ${descreverInsumo(insumo)}');
+      _ui.linha('  [${insumo.id}] ${descreverInsumo(insumo)}');
     }
   }
 
   Future<void> _listarAplicadores() async {
     final aplicadores = await _repositorios.aplicadores.listarTodos();
     if (aplicadores.isEmpty) {
-      _ui.linha('Nenhum aplicador cadastrado.');
+      _ui.aviso('Nenhum aplicador cadastrado.');
       return;
     }
+    _ui.subtitulo('Aplicadores');
     for (final aplicador in aplicadores) {
       // Cada subclasse responde do seu jeito (polimorfismo).
-      _ui.linha('[${aplicador.id}] ${aplicador.descreverCapacidade()}');
-      _ui.linha('     registro: ${aplicador.origemDoRegistro()}');
+      _ui.linha();
+      _ui.linha('  [${aplicador.id}] ${aplicador.descreverCapacidade()}');
+      _ui.linha('       registro: ${aplicador.origemDoRegistro()}');
     }
   }
 
   Future<void> _listarOperacoes() async {
     final operacoes = await _repositorios.operacoes.listarTodos();
     if (operacoes.isEmpty) {
-      _ui.linha('Nenhuma operação cadastrada.');
+      _ui.aviso('Nenhuma operação cadastrada.');
       return;
     }
+    _ui.subtitulo('Operações');
     for (final operacao in operacoes) {
-      _ui.linha('[${operacao.id}] ${operacao.descricao}');
+      _ui.linha('  [${operacao.id}] ${operacao.descricao}');
     }
   }
 
   Future<void> _listarAplicacoes() async {
     final aplicacoes = await _repositorios.aplicacoes.listarTodos();
     if (aplicacoes.isEmpty) {
-      _ui.linha('Nenhuma aplicação registrada.');
+      _ui.aviso('Nenhuma aplicação registrada.');
       return;
     }
+    _ui.subtitulo('Aplicações registradas');
     final escolhida = _ui.escolherPorId(
       'Id da aplicação para ver os detalhes [Enter = voltar]',
       aplicacoes,
@@ -767,12 +806,13 @@ class MenuCaderno {
         if (_avisosDeReaplicacao(aplicacao).isNotEmpty) aplicacao,
     ];
     if (pendentes.isEmpty) {
-      _ui.linha('Nenhuma aplicação precisa ser reaplicada.');
+      _ui.aviso('Nenhuma aplicação precisa ser reaplicada.');
       return;
     }
     _ui.secao('APLICAÇÕES A REAPLICAR');
     final porImprevisto = <MotivoReaplicacao, int>{};
     for (final aplicacao in pendentes) {
+      _ui.linha();
       _ui.linha('  [${aplicacao.id}] ${descreverAplicacao(aplicacao)}');
       for (final aviso in _avisosDeReaplicacao(aplicacao)) {
         _ui.linha('       ! $aviso');
@@ -822,6 +862,7 @@ class MenuCaderno {
       for (final aviso in avisos) {
         _ui.linha('   ! $aviso');
       }
+      _ui.linha();
     }
     _ui.linha('  Data: ${formatarData(aplicacao.data)}');
     _ui.linha('  Operação: ${aplicacao.operacao.descricao}');
@@ -832,6 +873,7 @@ class MenuCaderno {
         .join(', ');
     _ui.linha('  Talhões: $talhoes');
     _ui.linha('  Área total: ${formatarNumero(aplicacao.areaTotalHa)} ha');
+    _ui.linha();
     final horas = aplicacao.horasAteChuva;
     if (horas == null) {
       _ui.linha('  Chuva: não informada');
@@ -850,10 +892,16 @@ class MenuCaderno {
     if (observacao != null) {
       _ui.linha('  Observação: $observacao');
     }
+    _ui.linha();
     _ui.linha('  Insumos:');
+    var primeiro = true;
     for (final item in aplicacao.insumos) {
       final unidade = item.unidade.texto;
       final prevista = formatarCompacto(item.dosePrevista);
+      if (!primeiro) {
+        _ui.linha();
+      }
+      primeiro = false;
       _ui.linha('   - ${item.insumo.nome}');
       _ui.linha('       dose prevista: $prevista $unidade');
       final realizada = item.doseRealizada;
@@ -882,13 +930,14 @@ class MenuCaderno {
   Future<void> _resumoDesperdicio() async {
     final resumo = await _aplicacaoService.resumoDesperdicio();
     if (resumo.isEmpty) {
-      _ui.linha('Ainda não há dose realizada registrada.');
+      _ui.aviso('Ainda não há dose realizada registrada.');
       _ui.linha('Registre uma aplicação informando a dose realizada.');
       return;
     }
     _ui.secao('RESUMO DE DESPERDÍCIO (todas as aplicações)');
     for (final totais in resumo.values) {
       final medida = totais.unidade.split('/').first;
+      _ui.linha();
       _ui.linha('  ${totais.unidade}');
       _ui.linha(
         '    previsto: ${formatarNumero(totais.totalPrevisto, 3)} $medida',
@@ -909,9 +958,11 @@ class MenuCaderno {
 
   Future<void> _parametrosOperacionais() async {
     _mostrarParametros();
+    _ui.linha();
     if (!_ui.confirmar('Alterar os parâmetros?')) {
       return;
     }
+    _ui.linha();
     _ui.linha('Enter mantém o valor atual.');
     final atual = _parametros;
     final tolerancia =
@@ -940,19 +991,21 @@ class MenuCaderno {
       limiteChuvaHoras: limite,
       fatorCompra: fator,
     );
-    _ui.linha('Parâmetros atualizados.');
+    _ui.sucesso('Parâmetros atualizados.');
     _mostrarParametros();
   }
 
   Future<void> _carregarExemplo() async {
     final dados = await garantirDadosExemplo(_repositorios);
-    _ui.linha('\nDados de exemplo prontos (o que já existia foi mantido):');
+    _ui.sucesso('Dados de exemplo prontos (o que já existia foi mantido):');
+    _ui.linha();
     _ui.linha('  Área: ${dados.sede.nome}');
     _ui.linha('  Talhão: ${descreverTalhao(dados.chico1)}');
     _ui.linha('  Talhão: ${descreverTalhao(dados.chico2)}');
     _ui.linha('  ${dados.drone.descreverCapacidade()}');
     _ui.linha('  Operação: ${dados.operacao.descricao}');
     _ui.linha('  Insumos: ${dados.orkestra.nome} e ${dados.boro.nome}');
+    _ui.linha();
     _ui.linha('Agora já dá para usar "Registrar aplicação".');
   }
 

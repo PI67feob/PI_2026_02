@@ -109,7 +109,7 @@ class MenuManutencao {
       return;
     }
     final corrigida = await _servico.corrigirArea(area.id!, nome: nome);
-    _ui.linha('Área corrigida: [${corrigida.id}] ${corrigida.nome}');
+    _ui.sucesso('Área corrigida: [${corrigida.id}] ${corrigida.nome}');
   }
 
   Future<void> _corrigirTalhao() async {
@@ -124,7 +124,7 @@ class MenuManutencao {
     if (talhao == null) {
       return;
     }
-    _ui.linha('A área do talhão (${talhao.area.nome}) não muda aqui.');
+    _ui.linha('\nA área do talhão (${talhao.area.nome}) não muda aqui.');
     final nome = _ui.editarTexto('Nome do talhão', talhao.nome);
     final hectares = _ui.editarNumero(
       'Tamanho em hectares',
@@ -165,7 +165,7 @@ class MenuManutencao {
       nome: nome,
       hectares: hectares,
     );
-    _ui.linha(
+    _ui.sucesso(
       'Talhão corrigido: [${corrigido.id}] ${descreverTalhao(corrigido)}',
     );
   }
@@ -199,7 +199,7 @@ class MenuManutencao {
       tipo: tipo,
       marca: marca,
     );
-    _ui.linha(
+    _ui.sucesso(
       'Insumo corrigido: [${corrigido.id}] ${descreverInsumo(corrigido)}',
     );
   }
@@ -217,7 +217,7 @@ class MenuManutencao {
       return;
     }
     _ui.linha(
-      'O tipo (${aplicador.tipo}) não muda. '
+      '\nO tipo (${aplicador.tipo}) não muda. '
       'Para trocar de tipo, exclua e cadastre outro.',
     );
     final modelo = _ui.editarTextoOpcional('Modelo', aplicador.modelo);
@@ -255,7 +255,7 @@ class MenuManutencao {
       capacidadeMaximaL: litros,
       capacidadeMaximaKg: quilos,
     );
-    _ui.linha(
+    _ui.sucesso(
       'Aplicador corrigido: [${corrigido.id}] ${corrigido.descreverCapacidade()}',
     );
   }
@@ -280,7 +280,7 @@ class MenuManutencao {
       operacao.id!,
       descricao: descricao,
     );
-    _ui.linha('Operação corrigida: [${corrigida.id}] ${corrigida.descricao}');
+    _ui.sucesso('Operação corrigida: [${corrigida.id}] ${corrigida.descricao}');
   }
 
   Future<void> _corrigirAplicacao() async {
@@ -392,7 +392,7 @@ class MenuManutencao {
       motivoReaplicacao: motivo,
       dosesRealizadas: doses,
     );
-    _ui.linha('Aplicação corrigida:');
+    _ui.sucesso('Aplicação corrigida:');
     _mostrarAplicacao(corrigida);
   }
 
@@ -522,11 +522,11 @@ class MenuManutencao {
     }
     _ui.linha('Excluir não pode ser desfeito.');
     if (!_ui.confirmar('Excluir mesmo?')) {
-      _ui.linha('Cancelado. Nada foi excluído.');
+      _ui.aviso('Cancelado. Nada foi excluído.');
       return;
     }
     final excluido = await excluir(id);
-    _ui.linha('Excluído: ${descrever(excluido)}');
+    _ui.sucesso('Excluído: ${descrever(excluido)}');
   }
 
   // ---------------------------------------------------------------------
@@ -543,10 +543,10 @@ class MenuManutencao {
     required String Function(T registro) descrever,
   }) {
     if (registros.isEmpty) {
-      _ui.linha(vazio);
+      _ui.aviso(vazio);
       return null;
     }
-    _ui.linha(titulo);
+    _ui.subtitulo(titulo.replaceAll(':', ''));
     return _ui.escolherPorId(rotulo, registros, descrever);
   }
 
@@ -565,7 +565,7 @@ class MenuManutencao {
         if (mudanca.antes != mudanca.depois) mudanca,
     ];
     if (reais.isEmpty) {
-      _ui.linha('Nada foi alterado.');
+      _ui.aviso('Nada foi alterado.');
       return false;
     }
     _ui.linha('\nVai mudar:');
@@ -575,8 +575,9 @@ class MenuManutencao {
     for (final aviso in avisos) {
       _ui.linha('Atenção: $aviso');
     }
+    _ui.linha();
     if (!_ui.confirmar('Salvar a correção?', padrao: padrao)) {
-      _ui.linha('Cancelado. Nada foi alterado.');
+      _ui.aviso('Cancelado. Nada foi alterado.');
       return false;
     }
     return true;

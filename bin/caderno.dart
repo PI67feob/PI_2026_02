@@ -34,8 +34,15 @@ Future<void> main(List<String> argumentos) async {
   }
 
   const terminal = TerminalConsole();
+  // A pausa "Aperte Enter" só faz sentido com uma pessoa na frente da tela:
+  // com as respostas vindas de um arquivo ou de um pipe, ela só atrapalharia.
+  final pausas = stdin.hasTerminal && !argumentos.contains('--sem-pausa');
   if (!argumentos.contains('--mysql')) {
-    await MenuCaderno(Repositorios.memoria(), terminal).executar();
+    await MenuCaderno(
+      Repositorios.memoria(),
+      terminal,
+      pausas: pausas,
+    ).executar();
     return;
   }
 
@@ -44,7 +51,11 @@ Future<void> main(List<String> argumentos) async {
     stdout.writeln('Conectando ao MySQL...');
     banco = await ConexaoMysql.abrir(ConfiguracaoBanco.doAmbiente());
     stdout.writeln('Conectado.\n');
-    await MenuCaderno(Repositorios.mysql(banco), terminal).executar();
+    await MenuCaderno(
+      Repositorios.mysql(banco),
+      terminal,
+      pausas: pausas,
+    ).executar();
   } on PersistenciaException catch (erro) {
     stderr.writeln('\nFALHOU: ${erro.mensagem}');
     stderr.writeln('Causa técnica: ${erro.causa}');
@@ -59,7 +70,7 @@ Future<void> main(List<String> argumentos) async {
   }
 }
 
-const _argumentosConhecidos = {'--mysql', '--ajuda', '-h'};
+const _argumentosConhecidos = {'--mysql', '--sem-pausa', '--ajuda', '-h'};
 
 const _dicaDeConexao =
     'Confira as variáveis DB_HOST, DB_PORT, DB_NAME, DB_USER e DB_PASSWORD, '
@@ -74,5 +85,10 @@ Uso:
   dart run bin/caderno.dart --mysql   dados no MySQL da AWS
   dart run bin/caderno.dart --ajuda   mostra esta mensagem
 
+Opção extra:
+  --sem-pausa   não espera o Enter depois de cada opção do menu
+
 No menu, digite o número da opção e Enter. Em qualquer pergunta, Enter sem
-escrever nada cancela ou pula o campo opcional.''';
+escrever nada cancela ou pula o campo opcional. Depois de cada opção o
+programa espera um Enter, para dar tempo de ler o resultado (só quando o
+teclado está ligado; com as respostas vindas de um arquivo não espera).''';

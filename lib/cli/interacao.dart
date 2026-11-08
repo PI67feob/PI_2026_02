@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:caderno_fazenda/cli/formato.dart';
 import 'package:caderno_fazenda/cli/leitura.dart';
 import 'package:caderno_fazenda/cli/terminal.dart';
@@ -23,19 +25,84 @@ class OpcaoMenu {
 /// programa quebrar. Em toda pergunta, Enter sem escrever nada devolve null:
 /// quem chamou decide se isso cancela a operação ou pula um campo opcional.
 class Interacao {
-  final Terminal _terminal;
+  /// Largura mínima da moldura dos títulos.
+  static const int _larguraMinima = 50;
 
-  Interacao(this._terminal);
+  final Terminal _terminal;
+  final bool _pausas;
+  int _menusAbertos = 0;
+  bool _ultimaEmBranco = false;
+
+  /// Com [pausas] ligadas, depois de cada opção do menu o programa espera um
+  /// Enter antes de desenhar o menu de novo, para o resultado não sumir da
+  /// tela. Fica desligado por padrão: com a entrada vinda de um arquivo ou de
+  /// um teste, ninguém está lá para apertar Enter.
+  Interacao(this._terminal, {this._pausas = false});
 
   /// Escreve uma linha.
+  ///
+  /// Uma linha em branco logo depois de outra é descartada: assim cada trecho
+  /// do programa pode começar e terminar com a sua folga sem que o espaço
+  /// entre dois trechos dobre.
   void linha([String texto = '']) {
+    if (texto.isEmpty) {
+      if (_ultimaEmBranco) {
+        return;
+      }
+      _ultimaEmBranco = true;
+    } else {
+      _ultimaEmBranco = false;
+    }
     _terminal.escreverLinha(texto);
   }
 
-  /// Escreve um título de seção, separado do que veio antes.
+  /// Escreve um título de seção, em moldura e separado do que veio antes e
+  /// do que vem depois.
   void secao(String texto) {
+    final largura = max(_larguraMinima, texto.length + 6);
     linha();
-    linha('=== $texto ===');
+    linha('=' * largura);
+    linha('  $texto');
+    linha('=' * largura);
+    linha();
+  }
+
+  /// Escreve um subtítulo sublinhado, separado do que veio antes.
+  void subtitulo(String texto) {
+    linha();
+    linha(texto);
+    linha('-' * texto.length);
+  }
+
+  /// Escreve o título de um passo de uma tarefa longa ("Passo 2 de 6 -
+  /// Aplicador"), para o usuário saber em que ponto está.
+  void etapa(int numero, int total, String titulo) {
+    subtitulo('Passo $numero de $total - $titulo');
+  }
+
+  /// Escreve uma mensagem de que algo deu certo, com uma linha em branco
+  /// antes para destacar.
+  void sucesso(String texto) {
+    linha();
+    linha('  [ok] $texto');
+  }
+
+  /// Escreve um aviso (algo não foi feito, ou pede atenção), com uma linha em
+  /// branco antes.
+  void aviso(String texto) {
+    linha();
+    linha('  [!] $texto');
+  }
+
+  /// Espera o usuário apertar Enter, para ele ler a tela com calma.
+  ///
+  /// Lança [EntradaEncerrada] se a entrada acabou.
+  void pausar([String texto = 'Aperte Enter para continuar']) {
+    _ultimaEmBranco = false;
+    _terminal.escrever('\n$texto... ');
+    if (_terminal.lerLinha() == null) {
+      throw const EntradaEncerrada();
+    }
   }
 
   /// Faz uma pergunta e devolve a resposta sem espaços nas pontas, vazia se o
@@ -43,6 +110,7 @@ class Interacao {
   ///
   /// Lança [EntradaEncerrada] se a entrada acabou.
   String perguntar(String rotulo) {
+    _ultimaEmBranco = false;
     _terminal.escrever('$rotulo: ');
     final resposta = _terminal.lerLinha();
     if (resposta == null) {
@@ -353,25 +421,45 @@ class Interacao {
     String saida = 'Voltar',
     String? dica,
   }) async {
+    _menusAbertos++;
     while (true) {
       secao(titulo);
       if (dica != null) {
         linha(dica);
+        linha();
       }
       for (var i = 0; i < opcoes.length; i++) {
         linha('  ${i + 1}. ${opcoes[i].texto}');
       }
+      linha();
       linha('  0. $saida');
-      final resposta = perguntar('Escolha uma opção');
-      if (resposta == '0') {
+      linha();
+      final numero = _perguntarOpcaoDoMenu(opcoes.length);
+      if (numero == 0) {
         return;
       }
-      final numero = int.tryParse(resposta);
-      if (numero == null || numero < 1 || numero > opcoes.length) {
-        linha('Opção inválida. Digite o número de uma das opções.');
-        continue;
-      }
+      linha();
+      final abertosAntes = _menusAbertos;
       await executarProtegido(opcoes[numero - 1].acao);
+      // Se a opção abriu outro menu, quem fecha aquele já deu a pausa que
+      // precisava: pausar de novo aqui seria só uma tecla a mais.
+      if (_pausas && _menusAbertos == abertosAntes) {
+        pausar('Aperte Enter para voltar ao menu');
+      }
+    }
+  }
+
+  /// Pergunta a opção do menu até vir um número de 0 a [quantidade]. Em caso
+  /// de engano, avisa e pergunta de novo sem desenhar o menu outra vez.
+  int _perguntarOpcaoDoMenu(int quantidade) {
+    while (true) {
+      final resposta = perguntar('Escolha uma opção');
+      final numero = int.tryParse(resposta);
+      if (numero != null && numero >= 0 && numero <= quantidade) {
+        return numero;
+      }
+      aviso('Opção inválida. Digite o número de uma das opções.');
+      linha();
     }
   }
 
@@ -393,16 +481,16 @@ class Interacao {
     } on EntradaEncerrada {
       rethrow;
     } on PersistenciaException catch (erro) {
-      linha('\nNão foi possível acessar os dados: ${erro.mensagem}');
-      linha('Causa técnica: ${erro.causa}');
+      aviso('Não foi possível acessar os dados: ${erro.mensagem}');
+      linha('      Causa técnica: ${erro.causa}');
     } on AgroGestorException catch (erro) {
-      linha('\nNão foi possível concluir: $erro');
+      aviso('Não foi possível concluir: $erro');
     } on CaldaException catch (erro) {
-      linha('\nErro de cálculo: ${erro.message}');
+      aviso('Erro de cálculo: ${erro.message}');
     } on DesperdicioException catch (erro) {
-      linha('\nErro de cálculo: ${erro.message}');
+      aviso('Erro de cálculo: ${erro.message}');
     } on Exception catch (erro) {
-      linha('\nErro inesperado: $erro');
+      aviso('Erro inesperado: $erro');
     }
   }
 
