@@ -4,6 +4,7 @@ import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
 import 'package:caderno_fazenda/models/area.dart';
 import 'package:caderno_fazenda/models/drone.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/unidade_dose.dart';
@@ -104,6 +105,81 @@ void main() {
       var mensagem = mensagemDoErro(() => criar(talhoes: [chico1, chico1]));
 
       expect(mensagem, 'Dado inválido: talhões (Chico1 repetido)');
+    });
+
+    test('sem chuva e sem motivo, os dois ficam nulos', () {
+      var aplicacao = criar();
+
+      expect(aplicacao.horasAteChuva, isNull);
+      expect(aplicacao.motivoReaplicacao, isNull);
+    });
+
+    test('guarda as horas ate a chuva e o motivo de reaplicacao', () {
+      var aplicacao = Aplicacao(
+        data: DateTime(2026, 11, 6),
+        operacao: operacao,
+        aplicador: drone,
+        talhoes: [chico1],
+        insumos: [dose(orkestra)],
+        horasAteChuva: 2.5,
+        motivoReaplicacao: MotivoReaplicacao.solCalor,
+      );
+
+      expect(aplicacao.horasAteChuva, 2.5);
+      expect(aplicacao.motivoReaplicacao, MotivoReaplicacao.solCalor);
+    });
+
+    test('as horas e o motivo podem ser trocados e tirados', () {
+      var aplicacao = criar();
+
+      aplicacao.horasAteChuva = 1;
+      aplicacao.motivoReaplicacao = MotivoReaplicacao.vento;
+      expect(aplicacao.horasAteChuva, 1);
+      expect(aplicacao.motivoReaplicacao, MotivoReaplicacao.vento);
+
+      aplicacao.horasAteChuva = null;
+      aplicacao.motivoReaplicacao = null;
+      expect(aplicacao.horasAteChuva, isNull);
+      expect(aplicacao.motivoReaplicacao, isNull);
+    });
+
+    test('zero hora ate a chuva e aceito', () {
+      var aplicacao = criar();
+
+      aplicacao.horasAteChuva = 0;
+
+      expect(aplicacao.horasAteChuva, 0);
+    });
+
+    test('horas negativas sao recusadas e o valor antigo fica', () {
+      var aplicacao = criar();
+      aplicacao.horasAteChuva = 4;
+
+      var mensagem = mensagemDoErro(() => aplicacao.horasAteChuva = -0.5);
+
+      expect(mensagem, 'Dado inválido: chuva (horas) (não pode ser negativa)');
+      expect(aplicacao.horasAteChuva, 4);
+    });
+
+    test('horas que nao sao numero sao recusadas', () {
+      var aplicacao = criar();
+
+      expect(() => aplicacao.horasAteChuva = double.nan, recusa);
+      expect(() => aplicacao.horasAteChuva = double.infinity, recusa);
+    });
+
+    test('o construtor tambem recusa horas negativas', () {
+      expect(
+        () => Aplicacao(
+          data: DateTime(2026, 11, 6),
+          operacao: operacao,
+          aplicador: drone,
+          talhoes: [chico1],
+          insumos: [dose(orkestra)],
+          horasAteChuva: -1,
+        ),
+        recusa,
+      );
     });
 
     test('observacao em branco vira nulo e o texto e aparado', () {

@@ -2,6 +2,7 @@ import 'package:caderno_fazenda/exceptions/dado_invalido_exception.dart';
 import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
 import 'package:caderno_fazenda/models/aplicador.dart';
 import 'package:caderno_fazenda/models/entidade.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/validacoes.dart';
@@ -17,6 +18,11 @@ import 'package:caderno_fazenda/models/validacoes.dart';
 /// DATE), há ao menos um talhão e um insumo, e nenhum talhão ou insumo se
 /// repete. O volume de calda não é guardado: ele é calculado pelo serviço a
 /// partir da área e da taxa de aplicação.
+///
+/// Guarda também o que pode obrigar a refazer o serviço: as horas entre o fim
+/// da aplicação e a chuva e o imprevisto que obriga a reaplicar (chuva, sol,
+/// vento...). O aviso de reaplicar é calculado com o limite de chuva em vigor.
+/// O motivo fica gravado e é o que o BI agrupa.
 class Aplicacao extends Entidade {
   /// Tipo de trabalho feito (ex.: pulverização).
   final Operacao operacao;
@@ -28,6 +34,7 @@ class Aplicacao extends Entidade {
   final List<AplicacaoInsumo> _insumos = [];
   late DateTime _data;
   String? _observacao;
+  double? _horasAteChuva;
 
   /// Cria a aplicação. Lança `DadoInvalidoException` se faltar talhão ou
   /// insumo, ou se algum deles estiver repetido.
@@ -38,10 +45,13 @@ class Aplicacao extends Entidade {
     required List<Talhao> talhoes,
     required List<AplicacaoInsumo> insumos,
     String? observacao,
+    double? horasAteChuva,
+    this.motivoReaplicacao,
     super.id,
   }) {
     this.data = data;
     this.observacao = observacao;
+    this.horasAteChuva = horasAteChuva;
     for (final talhao in talhoes) {
       adicionarTalhao(talhao);
     }
@@ -69,6 +79,25 @@ class Aplicacao extends Entidade {
   set observacao(String? valor) {
     _observacao = textoOpcional(valor);
   }
+
+  /// Horas entre o fim da aplicação e a chuva; nulo quando não choveu ou não
+  /// se sabe.
+  double? get horasAteChuva => _horasAteChuva;
+
+  /// Lança `DadoInvalidoException` se for negativo ou não for um número.
+  set horasAteChuva(double? valor) {
+    if (valor != null && !valor.isFinite) {
+      throw DadoInvalidoException('chuva (horas)', 'precisa ser um número');
+    }
+    if (valor != null && valor < 0) {
+      throw DadoInvalidoException('chuva (horas)', 'não pode ser negativa');
+    }
+    _horasAteChuva = valor;
+  }
+
+  /// Imprevisto que obriga a reaplicar; nulo quando nada pede para refazer a
+  /// aplicação. É a categoria que o BI agrupa no banco.
+  MotivoReaplicacao? motivoReaplicacao;
 
   /// Talhões da aplicação (cópia que não pode ser alterada de fora).
   List<Talhao> get talhoes => List.unmodifiable(_talhoes);

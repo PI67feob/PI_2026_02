@@ -1,9 +1,11 @@
 import 'package:caderno_fazenda/cli/formato.dart';
 import 'package:caderno_fazenda/cli/interacao.dart';
+import 'package:caderno_fazenda/logica/alertas_operacionais.dart';
 import 'package:caderno_fazenda/logica/normalizacao_dose.dart';
 import 'package:caderno_fazenda/models/aplicacao.dart';
 import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
 import 'package:caderno_fazenda/models/entidade.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/unidade_dose.dart';
 import 'package:caderno_fazenda/repositories/repositorios.dart';
 import 'package:caderno_fazenda/services/manutencao_service.dart';
@@ -40,17 +42,20 @@ class MenuManutencao {
   final Interacao _ui;
   final Repositorios _repositorios;
   final void Function(Aplicacao aplicacao) _mostrarAplicacao;
+  final double Function() _limiteChuvaHoras;
   final ManutencaoService _servico;
   final TalhaoService _talhaoService;
 
   /// Cria o menu sobre [repositorios], conversando pela [ui].
   ///
   /// [mostrarAplicacao] mostra os detalhes de uma aplicação na tela (é o
-  /// mesmo texto da consulta "Aplicações registradas").
+  /// mesmo texto da consulta "Aplicações registradas"). [limiteChuvaHoras]
+  /// devolve o limite de chuva em vigor, que pode mudar nos parâmetros.
   MenuManutencao(
     this._ui,
     Repositorios repositorios, {
     required this._mostrarAplicacao,
+    required this._limiteChuvaHoras,
   }) : _repositorios = repositorios,
        _servico = ManutencaoService(
          repositorios.areas,
@@ -293,18 +298,56 @@ class MenuManutencao {
     _mostrarAplicacao(aplicacao);
     _ui.linha();
     _ui.linha(
-      'Aqui dá para mudar a data, a observação e a dose realizada. Talhões, '
-      'insumos, aplicador, operação e dose prevista não mudam: para isso, '
-      'exclua a aplicação e registre outra.',
+      'Aqui dá para mudar a data, a observação, a chuva, o motivo de '
+      'reaplicação e a dose realizada. Talhões, insumos, aplicador, operação '
+      'e dose prevista não mudam: para isso, exclua a aplicação e registre '
+      'outra.',
     );
     final data = _ui.editarData('Data da aplicação', aplicacao.data);
     final observacao = _ui.editarTextoOpcional(
       'Observação',
       aplicacao.observacao,
     );
+    final horas = _ui.editarNumeroOpcional(
+      'Horas entre o fim da aplicação e a chuva',
+      aplicacao.horasAteChuva,
+      minimo: 0,
+    );
+    final motivoAtual = aplicacao.motivoReaplicacao;
+    final posicaoMotivo = _ui.editarOpcaoOpcional(
+      'Imprevisto que obriga a reaplicar',
+      textosDosMotivos,
+      motivoAtual?.index,
+    );
+    var motivo = posicaoMotivo == null
+        ? null
+        : MotivoReaplicacao.values[posicaoMotivo];
+    // Mesma regra do registro: chuva abaixo do limite sempre deixa o motivo
+    // gravado como chuva, para o BI não perder a reaplicação.
+    final chuvaPedeReaplicar =
+        horas != null &&
+        avaliarChuva(horas, limiteHoras: _limiteChuvaHoras()) ==
+            DecisaoChuva.reaplicar;
+    if (chuvaPedeReaplicar && motivo == null) {
+      motivo = MotivoReaplicacao.chuva;
+      _ui.linha(
+        'A chuva veio antes do limite de ${formatarCompacto(_limiteChuvaHoras())} '
+        'h: o motivo fica como chuva.',
+      );
+    }
     final mudancas = [
       _Mudanca('data', formatarData(aplicacao.data), formatarData(data)),
       _Mudanca('observação', _texto(aplicacao.observacao), _texto(observacao)),
+      _Mudanca(
+        'chuva (horas)',
+        _numero(aplicacao.horasAteChuva),
+        _numero(horas),
+      ),
+      _Mudanca(
+        'motivo de reaplicação',
+        motivoAtual?.texto ?? '(nenhum)',
+        motivo?.texto ?? '(nenhum)',
+      ),
     ];
     final doses = <int, double>{};
     final avisos = <String>[];
@@ -345,6 +388,8 @@ class MenuManutencao {
       aplicacao.id!,
       data: data,
       observacao: observacao,
+      horasAteChuva: horas,
+      motivoReaplicacao: motivo,
       dosesRealizadas: doses,
     );
     _ui.linha('Aplicação corrigida:');

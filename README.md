@@ -139,7 +139,8 @@ Quem conhece quem:
 | `aplicador_fabrica.dart` | `criarAplicador(tipo, ...)`: converte o texto do banco (`'drone'`) na subclasse certa. |
 | `unidade_dose.dart` | Enum `UnidadeDose`: só `L/ha` ou `kg/ha`, as duas bases aceitas pelo banco. |
 | `aplicacao_insumo.dart` | `AplicacaoInsumo`: classe de associação (insumo + unidade + dose prevista + dose realizada). |
-| `aplicacao.dart` | `Aplicacao`: classe central. É **composta** por operação, aplicador, talhões e insumos. |
+| `motivo_reaplicacao.dart` | Enum `MotivoReaplicacao`: o imprevisto que obriga a refazer a aplicação (`chuva`, `sol`, `vento`, `outro`). É a categoria gravada no banco que o BI agrupa. |
+| `aplicacao.dart` | `Aplicacao`: classe central. É **composta** por operação, aplicador, talhões e insumos. Guarda também as horas até a chuva e o motivo de reaplicação. |
 
 ### `lib/exceptions/`: os erros do domínio
 
@@ -268,7 +269,9 @@ cada uma aparece:
 6. Calcula quantas **viagens** o aplicador faz para levar a calda e os sólidos. A capacidade
    vale por viagem, então uma aplicação maior que ela não é erro: é gravada inteira e o
    resultado diz quantas viagens são necessárias.
-7. Aplica a regra da **chuva**, se as horas foram informadas.
+7. Aplica a regra da **chuva**, se as horas foram informadas. As horas e o motivo de
+   reaplicação (chuva, sol, vento, outro) ficam **gravados** na aplicação. Se a chuva veio
+   antes do limite e nenhum motivo foi informado, o motivo gravado é `chuva`.
 8. Por insumo: quantidade prevista, quantidade a comprar, desperdício e status de sobredose.
 9. Grava pelo repositório.
 
@@ -368,8 +371,8 @@ aceitam vírgula ou ponto (`2,8`) e as datas são dia/mês/ano.
 | Opção | O que faz |
 |---|---|
 | 1. Cadastros | Nova área, talhão, insumo, aplicador (trator, drone ou bomba costal) e operação. Para mudar ou apagar o que já existe, use as opções 8 e 9. |
-| 2. Registrar aplicação | O fluxo principal, passo a passo. Mostra um resumo para conferir (já com o volume de calda, a massa de sólidos e as viagens do aplicador), grava pelo `AplicacaoService` e imprime o volume de calda, as viagens, as quantidades, o desperdício e os alertas de chuva e de sobredose. Se a aplicação for maior que a capacidade de uma viagem, não é erro: ela é gravada inteira e o resultado diz quantas viagens são necessárias. |
-| 3. Consultas | Lista áreas e talhões, insumos, aplicadores, operações e aplicações (com o detalhe de cada uma). |
+| 2. Registrar aplicação | O fluxo principal, passo a passo. Pergunta as horas até a chuva e a lista de imprevistos (chuva, sol/calor, vento, outro). Mostra um resumo para conferir (já com o volume de calda, a massa de sólidos e as viagens do aplicador), grava pelo `AplicacaoService` e imprime o volume de calda, as viagens, as quantidades, o desperdício e os alertas de reaplicação e de sobredose. Se a aplicação for maior que a capacidade de uma viagem, não é erro: ela é gravada inteira e o resultado diz quantas viagens são necessárias. |
+| 3. Consultas | Lista áreas e talhões, insumos, aplicadores, operações e aplicações (com o detalhe de cada uma). A lista marca com `REAPLICAR` as aplicações que pedem reaplicação, e o detalhe mostra os **ALERTAS** no topo. A opção "Aplicações a reaplicar (imprevistos)" lista só essas aplicações e conta quantas há por imprevisto. |
 | 4. Resumo de desperdício | Totais previstos, realizados e desperdiçados, separados em litros e quilos. |
 | 5. Calculadora | Uma opção para cada função de `lib/logica`: volume de calda, quantidade de produto, normalização e conversão de unidades, regras da chuva, da capacidade (com as viagens) e da sobredose, desperdício e quantidade a comprar. Mostra também a mensagem de erro de cada função. |
 | 6. Parâmetros | Muda a tolerância de sobredose, o limite da chuva e o fator de compra. |
@@ -432,7 +435,11 @@ banco real:
 4. **Conexão por variáveis de ambiente.** O `.env.example` lista os nomes (`DB_HOST`,
    `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`) e `ConfiguracaoBanco.doAmbiente()` as
    lê. **Nenhuma senha fica no código** e o `.env` está no `.gitignore`.
-5. **Pasta de SQL.** `banco/` receberá `schema.sql`, `roles.sql`, `seeds/` e
+5. **Reaplicação.** A tabela `aplicacao` precisa de duas colunas, `horas_ate_chuva` e
+   `motivo_reaplicacao`, que o Power BI usa para contar as reaplicações por imprevisto. O
+   `ALTER TABLE` está em `banco/RESERVADO_PARA_SQL.md` e precisa rodar **antes** de usar
+   `--mysql` com esta versão.
+6. **Pasta de SQL.** `banco/` receberá `schema.sql`, `roles.sql`, `seeds/` e
    `triggers.sql`. O banco da AWS já tem as tabelas e os triggers, mas esses arquivos
    ainda precisam ser versionados aqui.
 

@@ -6,6 +6,7 @@ import 'package:caderno_fazenda/models/aplicacao.dart';
 import 'package:caderno_fazenda/models/area.dart';
 import 'package:caderno_fazenda/models/drone.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/trator.dart';
@@ -66,6 +67,8 @@ void main() {
     Operacao? operacao,
     Drone? aplicador,
     double? real,
+    double? horasAteChuva,
+    MotivoReaplicacao? motivo,
   }) {
     var usado = insumo ?? orkestra;
     return registro
@@ -83,6 +86,8 @@ void main() {
             ),
           ],
           taxaLitrosPorHa: 10,
+          horasAteChuva: horasAteChuva,
+          motivoReaplicacao: motivo,
           observacao: 'primeira',
         )
         .then((resultado) => resultado.aplicacao);
@@ -348,11 +353,31 @@ void main() {
     });
   });
 
+  /// Corrige uma aplicação; o que não for passado fica como "sem valor",
+  /// porque o serviço grava exatamente o que recebe.
+  Future<Aplicacao> corrigir(
+    int id, {
+    required DateTime data,
+    String? observacao,
+    double? horasAteChuva,
+    MotivoReaplicacao? motivoReaplicacao,
+    Map<int, double> dosesRealizadas = const {},
+  }) {
+    return servico.corrigirAplicacao(
+      id,
+      data: data,
+      observacao: observacao,
+      horasAteChuva: horasAteChuva,
+      motivoReaplicacao: motivoReaplicacao,
+      dosesRealizadas: dosesRealizadas,
+    );
+  }
+
   group('corrigirAplicacao', () {
     test('troca data, observacao e dose realizada', () async {
       var aplicacao = await registrar();
 
-      var corrigida = await servico.corrigirAplicacao(
+      var corrigida = await corrigir(
         aplicacao.id!,
         data: DateTime(2026, 11, 7, 15, 30),
         observacao: 'revisada',
@@ -369,7 +394,7 @@ void main() {
     test('sem doses novas, as doses ficam como estao', () async {
       var aplicacao = await registrar(real: 310);
 
-      var corrigida = await servico.corrigirAplicacao(
+      var corrigida = await corrigir(
         aplicacao.id!,
         data: DateTime(2026, 11, 6),
         observacao: 'primeira',
@@ -382,7 +407,7 @@ void main() {
     test('observacao nula tira o texto', () async {
       var aplicacao = await registrar();
 
-      var corrigida = await servico.corrigirAplicacao(
+      var corrigida = await corrigir(
         aplicacao.id!,
         data: DateTime(2026, 11, 6),
       );
@@ -390,10 +415,66 @@ void main() {
       expect(corrigida.observacao, isNull);
     });
 
+    test('troca as horas ate a chuva e o motivo', () async {
+      var aplicacao = await registrar();
+
+      var corrigida = await corrigir(
+        aplicacao.id!,
+        data: DateTime(2026, 11, 6),
+        horasAteChuva: 2.5,
+        motivoReaplicacao: MotivoReaplicacao.vento,
+      );
+
+      expect(corrigida.horasAteChuva, 2.5);
+      expect(corrigida.motivoReaplicacao, MotivoReaplicacao.vento);
+      var gravada = await aplicacoes.buscarPorId(aplicacao.id!);
+      expect(gravada?.horasAteChuva, 2.5);
+      expect(gravada?.motivoReaplicacao, MotivoReaplicacao.vento);
+    });
+
+    test('horas e motivo nulos tiram o que estava gravado', () async {
+      var aplicacao = await registrar(
+        horasAteChuva: 1,
+        motivo: MotivoReaplicacao.solCalor,
+      );
+      expect(aplicacao.motivoReaplicacao, MotivoReaplicacao.solCalor);
+
+      var corrigida = await corrigir(
+        aplicacao.id!,
+        data: DateTime(2026, 11, 6),
+      );
+
+      expect(corrigida.horasAteChuva, isNull);
+      expect(corrigida.motivoReaplicacao, isNull);
+    });
+
+    test('horas negativas sao recusadas e nada muda', () async {
+      var aplicacao = await registrar(
+        horasAteChuva: 8,
+        motivo: MotivoReaplicacao.outro,
+      );
+
+      var mensagem = await mensagemDoErroAsync(() {
+        return corrigir(
+          aplicacao.id!,
+          data: DateTime(2030, 1, 1),
+          observacao: 'nao deveria gravar',
+          horasAteChuva: -1,
+          motivoReaplicacao: MotivoReaplicacao.vento,
+        );
+      });
+
+      expect(mensagem, 'Dado inválido: chuva (horas) (não pode ser negativa)');
+      expect(aplicacao.data, DateTime(2026, 11, 6));
+      expect(aplicacao.observacao, 'primeira');
+      expect(aplicacao.horasAteChuva, 8);
+      expect(aplicacao.motivoReaplicacao, MotivoReaplicacao.outro);
+    });
+
     test('dose realizada zero e aceita', () async {
       var aplicacao = await registrar();
 
-      var corrigida = await servico.corrigirAplicacao(
+      var corrigida = await corrigir(
         aplicacao.id!,
         data: DateTime(2026, 11, 6),
         dosesRealizadas: {orkestra.id!: 0},
@@ -406,7 +487,7 @@ void main() {
       var aplicacao = await registrar(real: 310);
 
       var mensagem = await mensagemDoErroAsync(() {
-        return servico.corrigirAplicacao(
+        return corrigir(
           aplicacao.id!,
           data: DateTime(2030, 1, 1),
           observacao: 'nao deveria gravar',
@@ -424,7 +505,7 @@ void main() {
       var aplicacao = await registrar();
 
       await expectLater(
-        servico.corrigirAplicacao(
+        corrigir(
           aplicacao.id!,
           data: DateTime(2026, 11, 6),
           dosesRealizadas: {orkestra.id!: double.nan},
@@ -437,7 +518,7 @@ void main() {
       var aplicacao = await registrar();
 
       var mensagem = await mensagemDoErroAsync(() {
-        return servico.corrigirAplicacao(
+        return corrigir(
           aplicacao.id!,
           data: DateTime(2026, 11, 6),
           dosesRealizadas: {boro.id!: 1},
@@ -452,7 +533,7 @@ void main() {
 
     test('aplicacao que nao existe', () async {
       var mensagem = await mensagemDoErroAsync(() {
-        return servico.corrigirAplicacao(99, data: DateTime(2026, 11, 6));
+        return corrigir(99, data: DateTime(2026, 11, 6));
       });
 
       expect(mensagem, 'Registro não encontrado: aplicação 99');
@@ -463,7 +544,7 @@ void main() {
       aplicacoes.bancoIndisponivel = true;
 
       await expectLater(
-        servico.corrigirAplicacao(aplicacao.id!, data: DateTime(2026, 11, 7)),
+        corrigir(aplicacao.id!, data: DateTime(2026, 11, 7)),
         throwsA(isA<PersistenciaException>()),
       );
     });

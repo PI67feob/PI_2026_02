@@ -9,6 +9,7 @@ import 'package:caderno_fazenda/models/aplicador_fabrica.dart';
 import 'package:caderno_fazenda/models/area.dart';
 import 'package:caderno_fazenda/models/entidade.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/repositories/interfaces/aplicacao_repository.dart';
@@ -155,21 +156,25 @@ class ManutencaoService {
     return _operacoes.salvar(operacao);
   }
 
-  /// Corrige a data, a observação e as doses realizadas de uma aplicação.
+  /// Corrige a data, a observação, a chuva, o motivo de reaplicação e as doses
+  /// realizadas de uma aplicação.
   ///
-  /// A [data] e a [observacao] são as que a aplicação terá depois (`null` na
-  /// observação tira o texto). As [dosesRealizadas] trazem só as doses que
-  /// mudam, pelo id do insumo; as outras ficam como estão. Talhões, insumos,
-  /// aplicador, operação e doses previstas não mudam: para isso, exclua a
-  /// aplicação e registre outra.
+  /// A [data], a [observacao], as [horasAteChuva] e o [motivoReaplicacao] são
+  /// os que a aplicação terá depois (`null` tira o valor). As [dosesRealizadas]
+  /// trazem só as doses que mudam, pelo id do insumo; as outras ficam como
+  /// estão. Talhões, insumos, aplicador, operação e doses previstas não mudam:
+  /// para isso, exclua a aplicação e registre outra.
   ///
-  /// Lança `DoseInvalidaException` se uma dose for negativa, e
-  /// `DadoInvalidoException` se um insumo da lista não fizer parte da
-  /// aplicação. Em qualquer recusa a aplicação continua como estava.
+  /// Lança `DoseInvalidaException` se uma dose for negativa,
+  /// `DadoInvalidoException` se as horas até a chuva forem negativas ou se um
+  /// insumo da lista não fizer parte da aplicação. Em qualquer recusa a
+  /// aplicação continua como estava.
   Future<Aplicacao> corrigirAplicacao(
     int id, {
     required DateTime data,
-    String? observacao,
+    required String? observacao,
+    required double? horasAteChuva,
+    required MotivoReaplicacao? motivoReaplicacao,
     Map<int, double> dosesRealizadas = const {},
   }) async {
     final aplicacao = await _aplicacoes.exigirPorId(id, 'aplicação');
@@ -189,8 +194,12 @@ class ManutencaoService {
       }
       mudancas.add((item, dose));
     }
+    // As horas são o único valor que pode ser recusado aqui, então vêm
+    // primeiro: se forem inválidas, nada mais é alterado.
+    aplicacao.horasAteChuva = horasAteChuva;
     aplicacao.data = data;
     aplicacao.observacao = observacao;
+    aplicacao.motivoReaplicacao = motivoReaplicacao;
     for (final (item, dose) in mudancas) {
       item.registrarDoseRealizada(dose);
     }

@@ -13,7 +13,9 @@ import '../ajuda/terminal_simulado.dart';
 /// acontecer, qualquer que seja a sequência de respostas:
 /// 1. aparecer "Erro inesperado" (um erro que ninguém previu);
 /// 2. sobrar no repositório um registro apontando para outro que não existe
-///    mais (por exemplo, uma aplicação cujo talhão foi excluído).
+///    mais (por exemplo, uma aplicação cujo talhão foi excluído);
+/// 3. ficar gravada uma chuva abaixo do limite sem o motivo de reaplicação
+///    (o BI conta as reaplicações pelo motivo).
 ///
 /// O sorteio usa uma semente fixa, então a mesma sequência roda toda vez.
 /// Se algum dia falhar, o número da sessão e as respostas aparecem na falha.
@@ -79,6 +81,7 @@ void main() {
       }
       respostas.addAll([
         sortear(['', '', '2,5', '5', '-1', '0']),
+        sortear(['', '', '1', '2', '3', '4', '9']),
         sortear(['', 'obs']),
         sortear(['', '', 's', 'n']),
       ]);
@@ -120,6 +123,8 @@ void main() {
           _ => [
             sortear(['', '15/11/2026', '31/02/2026']),
             sortear(['', '-', 'texto']),
+            sortear(['', '2', '8', '-', '-1', 'x']),
+            sortear(['', '-', '1', '2', '3', '4']),
             for (var i = 0; i < 3; i++) ...[
               sortear(['n', 's', 'n']),
               sortear(['1', '2']),
@@ -185,6 +190,12 @@ void main() {
         }
         if (aplicacao.areaTotalHa <= 0) {
           return 'aplicação $id: área zerada';
+        }
+        // Chuva abaixo do limite padrão (3 h) sempre deixa o motivo gravado,
+        // porque é por ele que o BI conta as reaplicações.
+        final horas = aplicacao.horasAteChuva;
+        if (horas != null && horas < 3 && aplicacao.motivoReaplicacao == null) {
+          return 'aplicação $id: chuva em $horas h sem motivo de reaplicação';
         }
       }
       return null;

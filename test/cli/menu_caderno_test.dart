@@ -1,6 +1,7 @@
 import 'package:caderno_fazenda/cli/dados_exemplo.dart';
 import 'package:caderno_fazenda/cli/menu_caderno.dart';
 import 'package:caderno_fazenda/models/aplicador_fabrica.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/repositories/memoria/repositorios_memoria.dart';
 import 'package:caderno_fazenda/repositories/repositorios.dart';
 import 'package:test/test.dart';
@@ -40,8 +41,13 @@ Future<Repositorios> _comExemplo() async {
 /// Respostas que registram a aplicação da demonstração: Orkestra SC
 /// (300 mL/ha previstos, 345 realizados) e Boro Super (500 g/ha previstos, 450
 /// realizados) nos talhões Chico1 e Chico2, com chuva 2,5 h depois.
+///
+/// As [horas] até a chuva e o [imprevisto] (número da lista, ou vazio para
+/// nenhum) podem ser trocados para criar outras situações.
 List<String> _registrarDemonstracao({
   String taxa = '10',
+  String horas = '2,5',
+  String imprevisto = '',
   String confirmar = '',
 }) {
   return [
@@ -53,7 +59,8 @@ List<String> _registrarDemonstracao({
     taxa, // taxa de aplicação, em L/ha
     '1', '1', '300', '345', 's', // Orkestra SC em mL/ha
     '2', '4', '500', '450', 'n', // Boro Super em g/ha
-    '2,5', // horas até a chuva
+    horas, // horas até a chuva
+    imprevisto, // imprevisto da lista (vazio = nenhum; a chuva marca sozinha)
     'Teste do menu', // observação
     confirmar, // Enter confirma
   ];
@@ -346,7 +353,7 @@ void main() {
       final sessao = await _rodar([
         '2', '1', '1', '1,2', '', '10',
         '1', '3', '2', '', 'n', // Orkestra: 2 L/1000L
-        '', '', // sem chuva, sem observação
+        '', '', '', // sem chuva, sem imprevisto, sem observação
         '', // confirma
         '0',
       ], repositorios: repos);
@@ -405,7 +412,7 @@ void main() {
       final sessao = await _rodar([
         '2', '1', '1', '2', '', '10', // só o Chico2, 3,8 ha
         '2', '5', '20', '', 'n', // Boro Super: 20 kg/ha
-        '', '', // sem chuva, sem observação
+        '', '', '', // sem chuva, sem imprevisto, sem observação
         '', // confirma
         '0',
       ], repositorios: repos);
@@ -498,9 +505,10 @@ void main() {
         '300',
         '',
         'n',
-        '',
-        '',
-        '',
+        '', // sem chuva
+        '', // sem imprevisto
+        '', // sem observação
+        '', // confirma
         '0',
       ], repositorios: repos);
       expect(sessao.saida, contains('ainda não aplicada'));
@@ -692,6 +700,255 @@ void main() {
         contains('Erro de cálculo: A area nao pode ser negativa.'),
       );
       expect(sessao.saida, contains('Volume de calda: 66,00 L'));
+    });
+  });
+
+  group('reaplicação e imprevistos', () {
+    // Só a tela de detalhes (a do registro também fala em REAPLICAR).
+    String detalhes(String saida) {
+      return saida.substring(saida.indexOf('=== APLICAÇÃO 1 ==='));
+    }
+
+    test('chuva antes do limite: os detalhes avisam para reaplicar', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(), // chuva 2,5 h, limite padrão de 3 h
+        '3', '5', '1', '0', // Consultas > Aplicações > detalhes da 1
+        '0',
+      ], repositorios: repos);
+      final tela = detalhes(sessao.saida);
+      expect(tela, contains('ALERTAS:'));
+      expect(
+        tela,
+        contains('! Choveu em menos de 3 h: REAPLICAR a aplicação.'),
+      );
+      expect(
+        tela,
+        contains(
+          'Chuva: 2,5 h depois da aplicação (choveu antes do limite: REAPLICAR)',
+        ),
+      );
+      expect(tela, contains('Reaplicar por: chuva'));
+      // O aviso da chuva não se repete como "marcada por chuva".
+      expect(tela, isNot(contains('Marcada para reaplicar')));
+      // O aviso vem antes dos dados da aplicação, para não passar batido.
+      expect(tela.indexOf('ALERTAS:') < tela.indexOf('Data:'), isTrue);
+      expect(sessao.respostasRestantes, 0);
+    });
+
+    test('a chuva e o motivo ficam gravados com a aplicação', () async {
+      final repos = await _comExemplo();
+      await _rodar(_registrarDemonstracao(), repositorios: repos);
+      final aplicacao = (await repos.aplicacoes.listarTodos()).single;
+      expect(aplicacao.horasAteChuva, 2.5);
+      expect(aplicacao.motivoReaplicacao, MotivoReaplicacao.chuva);
+    });
+
+    test('chuva depois do limite: sem alerta e sem motivo', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(horas: '12'),
+        '3',
+        '5',
+        '1',
+        '0',
+        '0',
+      ], repositorios: repos);
+      final tela = detalhes(sessao.saida);
+      expect(
+        tela,
+        contains(
+          'Chuva: 12 h depois da aplicação (choveu depois do limite: não reaplicar)',
+        ),
+      );
+      expect(tela, isNot(contains('ALERTAS:')));
+      expect(tela, isNot(contains('Reaplicar por:')));
+      expect(
+        (await repos.aplicacoes.listarTodos()).single.motivoReaplicacao,
+        isNull,
+      );
+    });
+
+    test('sem informação de chuva os detalhes dizem isso', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(horas: ''),
+        '3',
+        '5',
+        '1',
+        '0',
+        '0',
+      ], repositorios: repos);
+      final tela = detalhes(sessao.saida);
+      expect(tela, contains('Chuva: não informada'));
+      expect(tela, isNot(contains('ALERTAS:')));
+    });
+
+    test('o registro mostra a lista de imprevistos numerada', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar(
+        _registrarDemonstracao(horas: '12'),
+        repositorios: repos,
+      );
+      final saida = sessao.saida;
+      expect(saida, contains('Algum imprevisto vai obrigar a reaplicar?'));
+      expect(saida, contains('1. chuva'));
+      expect(saida, contains('2. sol/calor'));
+      expect(saida, contains('3. vento'));
+      expect(saida, contains('4. outro motivo'));
+      expect(saida, contains('Imprevisto [Enter = nenhum]'));
+    });
+
+    test('um imprevisto escolhido aparece na conferência, no resultado e '
+        'nos detalhes', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(horas: '12', imprevisto: '2'), // sol/calor
+        '3', '5', '1', '0',
+        '0',
+      ], repositorios: repos);
+      final saida = sessao.saida;
+      final conferencia = saida.substring(
+        saida.indexOf('CONFERIR ANTES DE GRAVAR'),
+        saida.indexOf('Gravar esta aplicação?'),
+      );
+      expect(conferencia, contains('Reaplicar por: sol/calor'));
+      expect(
+        saida,
+        contains(
+          '! Marcada para reaplicar por sol/calor: REAPLICAR a aplicação.',
+        ),
+      );
+      final tela = detalhes(saida);
+      expect(tela, contains('ALERTAS:'));
+      expect(tela, contains('Reaplicar por: sol/calor'));
+      expect(
+        (await repos.aplicacoes.listarTodos()).single.motivoReaplicacao,
+        MotivoReaplicacao.solCalor,
+      );
+    });
+
+    test('chuva abaixo do limite não troca o imprevisto escolhido', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(horas: '1', imprevisto: '3'), // vento
+        '3', '5', '1', '0',
+        '0',
+      ], repositorios: repos);
+      final tela = detalhes(sessao.saida);
+      expect(tela, contains('! Choveu em menos de 3 h: REAPLICAR'));
+      expect(tela, contains('! Marcada para reaplicar por vento'));
+      expect(
+        (await repos.aplicacoes.listarTodos()).single.motivoReaplicacao,
+        MotivoReaplicacao.vento,
+      );
+    });
+
+    test('cancelar na conferência não grava horas nem motivo', () async {
+      final repos = await _comExemplo();
+      await _rodar(
+        _registrarDemonstracao(imprevisto: '4', confirmar: 'n'),
+        repositorios: repos,
+      );
+      expect(await repos.aplicacoes.listarTodos(), isEmpty);
+    });
+
+    test('a lista de aplicações marca só as que pedem reaplicação', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(), // 2,5 h: reaplicar
+        ..._registrarDemonstracao(horas: '12'), // sem problema
+        '3', '5', '', // lista e volta
+        '0',
+        '0',
+      ], repositorios: repos);
+      final saida = sessao.saida;
+      final lista = saida.substring(saida.lastIndexOf('  [1] 07/11/2026'));
+      expect(RegExp(r'\| REAPLICAR').allMatches(lista).length, 1);
+      expect(lista, contains('| 2 insumos | REAPLICAR'));
+    });
+
+    test(
+      'mudar o limite da chuva muda o aviso das aplicações já gravadas',
+      () async {
+        final repos = await _comExemplo();
+        final sessao = await _rodar([
+          ..._registrarDemonstracao(horas: '5'), // limite de 3 h: sem aviso
+          '6', 's', '', '6', '', // parâmetros: limite da chuva passa a 6 h
+          '3', '5', '1', '0',
+          '0',
+        ], repositorios: repos);
+        final tela = detalhes(sessao.saida);
+        expect(
+          tela,
+          contains('! Choveu em menos de 6 h: REAPLICAR a aplicação.'),
+        );
+        // O motivo gravado não muda sozinho; o aviso é recalculado.
+        expect(
+          (await repos.aplicacoes.listarTodos()).single.motivoReaplicacao,
+          isNull,
+        );
+      },
+    );
+
+    test('consulta "a reaplicar" sem nada pendente avisa', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(horas: '12'),
+        '3',
+        '6',
+        '0',
+        '0',
+      ], repositorios: repos);
+      expect(
+        sessao.saida,
+        contains('Nenhuma aplicação precisa ser reaplicada.'),
+      );
+    });
+
+    test('consulta "a reaplicar" sem aplicações também avisa', () async {
+      final sessao = await _rodar(['3', '6', '0', '0']);
+      expect(
+        sessao.saida,
+        contains('Nenhuma aplicação precisa ser reaplicada.'),
+      );
+    });
+
+    test('consulta "a reaplicar" lista e conta por imprevisto', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(), // 1: chuva (automático)
+        ..._registrarDemonstracao(horas: '12', imprevisto: '2'), // 2: sol/calor
+        ..._registrarDemonstracao(horas: '12'), // 3: sem problema
+        ..._registrarDemonstracao(horas: '12', imprevisto: '2'), // 4: sol/calor
+        '3', '6', '0',
+        '0',
+      ], repositorios: repos);
+      final saida = sessao.saida;
+      final tela = saida.substring(saida.indexOf('=== APLICAÇÕES A REAPLICAR'));
+      expect(tela, contains('[1] '));
+      expect(tela, contains('[2] '));
+      expect(tela, isNot(contains('[3] ')));
+      expect(tela, contains('[4] '));
+      expect(tela, contains('Por imprevisto:'));
+      expect(tela, contains('chuva: 1'));
+      expect(tela, contains('sol/calor: 2'));
+      expect(tela, isNot(contains('vento:')));
+    });
+
+    test('aplicação antiga sem motivo, com chuva abaixo do limite, conta como '
+        'chuva', () async {
+      final repos = await _comExemplo();
+      await _rodar(
+        _registrarDemonstracao(horas: '5'), // 5 h: sem aviso com limite de 3 h
+        repositorios: repos,
+      );
+      final sessao = await _rodar([
+        '6', 's', '', '6', '', // limite passa a 6 h
+        '3', '6', '0',
+        '0',
+      ], repositorios: repos);
+      expect(sessao.saida, contains('chuva: 1'));
     });
   });
 }
