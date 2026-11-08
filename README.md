@@ -21,8 +21,8 @@ O que o código já faz:
 1. **Cadastra** áreas, talhões, insumos, aplicadores (trator, drone, bomba costal) e operações.
 2. **Registra uma aplicação.** Recebe as doses como estão na ficha de papel (mL/ha, g/ha,
    L/1000 L...), converte tudo para L/ha (líquido) ou kg/ha (sólido), calcula o volume de
-   calda, aplica as regras da fazenda (chuva, capacidade do aplicador, sobredose) e calcula
-   desperdício e quantidade a comprar.
+   calda e quantas viagens o aplicador faz (a capacidade dele vale por viagem), aplica as
+   regras da fazenda (chuva, sobredose) e calcula desperdício e quantidade a comprar.
 3. **Totaliza o desperdício** de todas as aplicações, separando litros de quilos.
 4. **Recusa dado inválido** com exceções próprias, e nada é gravado pela metade.
 
@@ -150,14 +150,14 @@ Quem conhece quem:
 | `registro_nao_encontrado_exception.dart` | Id que não existe no repositório. |
 | `talhao_invalido_exception.dart` | Hectares inválidos ou nome de talhão repetido na área. |
 | `dose_invalida_exception.dart` | Dose prevista zero ou dose negativa. |
-| `capacidade_excedida_exception.dart` | Calda (ou massa) maior que a capacidade do aplicador. |
 | `persistencia_exception.dart` | Falha de comunicação com o banco. Esconde o erro técnico. |
+| `exclusao_negada_exception.dart` | Exclusão recusada porque o registro está em uso (diz o motivo e o que excluir antes). |
 
 ### `lib/logica/`: as regras (funções puras)
 
 | Arquivo | Funções principais |
 |---|---|
-| `calculos_calda.dart` | `volumeCalda`, `quantidadeProdutoPorHa`, `quantidadeProdutoPor1000L`, `normalizarDose` (líquido, L/ha), `normalizarDoseMassa` (sólido, kg/ha), `converterUnidade` |
+| `calculos_calda.dart` | `volumeCalda`, `quantidadeProdutoPorHa`, `quantidadeProdutoPor1000L`, `normalizarDose` (líquido, L/ha), `normalizarDoseMassa` (sólido, kg/ha), `converterUnidade`, `viagensNecessarias` (quantas viagens o aplicador faz) |
 | `normalizacao_dose.dart` | `normalizarDoseInformada`: decide se a dose é líquida ou sólida e chama a função certa |
 | `calculo_desperdicio.dart` | `desvioDose`, `percentualDesperdicio`, `quantidadeAComprar` (fator 0,95) |
 | `alertas_operacionais.dart` | `avaliarChuva`, `avaliarCapacidade`, `avaliarSobredose`, com os enums de resultado |
@@ -181,7 +181,8 @@ Quem conhece quem:
 | Arquivo | Papel |
 |---|---|
 | `aplicacao_service.dart` | `AplicacaoService.registrar(...)`: o fluxo principal. `resumoDesperdicio()`: totais de todas as aplicações. |
-| `talhao_service.dart` | `TalhaoService`: cadastrar talhão (nome único na área), listar por área e corrigir hectares. |
+| `talhao_service.dart` | `TalhaoService`: cadastrar talhão (nome único na área), listar por área e corrigir nome e hectares. |
+| `manutencao_service.dart` | `ManutencaoService`: corrige área, insumo, aplicador, operação e aplicação (data, observação, dose realizada) e exclui os seis tipos de registro. Recusa excluir o que está em uso. Vale igual na memória e no MySQL. |
 | `parametros_operacionais.dart` | `ParametrosOperacionais`: tolerância de sobredose, limite da chuva e fator de compra, num lugar só. |
 | `dose_informada.dart` | `DoseInformada`: a dose **como foi anotada** na ficha (valor + unidade), antes de converter. |
 | `resultado_aplicacao.dart` | `ResultadoAplicacao` e `AvaliacaoInsumo`: o que o serviço calculou (volume, alerta de chuva, desperdício, status). |
@@ -193,9 +194,10 @@ Quem conhece quem:
 | `terminal.dart` | `Terminal`: a entrada e a saída de texto, como interface. `TerminalConsole` usa o teclado e a tela; os testes usam um terminal com respostas prontas. |
 | `interacao.dart` | `Interacao`: as perguntas (texto, número, data, sim ou não), as listas de escolha e o laço do menu. Se a resposta não serve, pergunta de novo; se o sistema recusa a operação, mostra o erro e o menu continua. |
 | `leitura.dart` | Transforma o que foi digitado em número (vírgula ou ponto), data (dia/mês/ano) e lista de ids. |
-| `formato.dart` | Número com vírgula, data e os textos das decisões da lógica (chuva, sobredose, capacidade). |
+| `formato.dart` | Número com vírgula, data e os textos das decisões da lógica (chuva, sobredose, capacidade e viagens). |
 | `menu_caderno.dart` | `MenuCaderno`: o menu principal. Cadastra pelos models e repositórios, registra aplicação pelo `AplicacaoService`, lista e resume. |
 | `menu_calculadora.dart` | `MenuCalculadora`: uma opção para cada função de `lib/logica`, chamada direto, sem serviço nem banco. |
+| `menu_manutencao.dart` | `MenuManutencao`: as opções Corrigir e Excluir. Pergunta, mostra o que vai mudar e pede a confirmação; as regras ficam no `ManutencaoService`. |
 | `dados_exemplo.dart` | `garantirDadosExemplo`: cria, sem duplicar, os cadastros de exemplo da fazenda. A demonstração (`bin/main.dart`) usa o mesmo. |
 
 ### `test/`
@@ -235,7 +237,7 @@ cada uma aparece:
 | **Listas** | `Aplicacao.talhoes` e `Aplicacao.insumos`; `registrar(talhaoIds: [...], doses: [...])` |
 | **Mapas** | `totalizarPorUnidade` devolve `Map<String, TotaisDesperdicio>` (a chave é `L/ha` ou `kg/ha`); `ConfiguracaoBanco.doAmbiente` lê um `Map` de variáveis |
 | **Funções** | Todas as de `lib/logica`: recebem dados, devolvem resultado, sem efeito colateral |
-| **Condicionais** | `if` e `switch` em `avaliarChuva`, `avaliarSobredose`, `normalizarDoseInformada`, `AplicacaoService._exigirDentro` |
+| **Condicionais** | `if` e `switch` em `avaliarChuva`, `avaliarSobredose`, `normalizarDoseInformada`, `AplicacaoService._viagens` |
 | **Repetição** | `for` em `AplicacaoService.registrar`, `_massaDeSolidos`, `totalizarPorUnidade` |
 | **Tratamento de erros** | Funções de lógica devolvem enums; o serviço transforma o resultado em exceção do domínio |
 
@@ -244,7 +246,7 @@ cada uma aparece:
 | Regra | Função | Resultado | Parâmetro | Pendência |
 |---|---|---|---|---|
 | **Chuva** | `avaliarChuva` | Menos de 3 h: reaplicar. Mais de 3 h: não reaplicar. | Limite de horas (padrão 3) | **PENDENTE:** a fazenda não definiu o caso de **exatamente 3 h**. Hoje: não reaplicar (`reaplicarNoLimite: true` inverte). |
-| **Capacidade** | `avaliarCapacidade` | Volume maior que a capacidade: excedeu. Igual: cabe. | Capacidade do aplicador | A capacidade do trator ainda não foi levantada (nula: não confere). **PENDENTE:** como lançar uma aplicação que exige mais de uma carga. |
+| **Capacidade** | `avaliarCapacidade` e `viagensNecessarias` | A capacidade vale **por viagem** (voo do drone, enchida da bomba, carga do trator). Volume maior que ela não é erro: pede mais viagens (divisão arredondada para cima). Igual: 1 viagem. | Capacidade do aplicador, em L e em kg | A capacidade do trator ainda não foi levantada (nula: as viagens não são calculadas). **PENDENTE:** calda e sólidos têm as viagens calculadas separadamente; falta confirmar com a fazenda se vão juntos no mesmo voo. |
 | **Sobredose** | `avaliarSobredose` | `ok` (até o previsto), `atencao` (até a tolerância), `critico` (acima) | Tolerância em % (obrigatória) | O valor da tolerância é do agrônomo. |
 | **Desperdício** | `percentualDesperdicio` | (realizado − previsto) ÷ previsto × 100. Aplicar menos que o previsto dá 0. | | |
 | **Fator de compra** | `quantidadeAComprar` | Quantidade calculada × 0,95 (a fazenda compra 5% a menos) | Fator (padrão 0,95) | |
@@ -263,7 +265,9 @@ cada uma aparece:
 3. Normaliza cada dose para L/ha (líquido) ou kg/ha (sólido).
 4. Monta a `Aplicacao`, que garante as próprias regras.
 5. Calcula o volume de calda (área × taxa) e a massa de produtos sólidos.
-6. Aplica a regra da **capacidade** do aplicador.
+6. Calcula quantas **viagens** o aplicador faz para levar a calda e os sólidos. A capacidade
+   vale por viagem, então uma aplicação maior que ela não é erro: é gravada inteira e o
+   resultado diz quantas viagens são necessárias.
 7. Aplica a regra da **chuva**, se as horas foram informadas.
 8. Por insumo: quantidade prevista, quantidade a comprar, desperdício e status de sobredose.
 9. Grava pelo repositório.
@@ -287,7 +291,9 @@ demonstração, não da fazenda):
   Registrado em: app do drone e ficha de papel
   Área total: 6,60 ha
   Volume de calda: 66,00 L
+  Viagens da calda: 1 viagem (até 70 L por viagem)
   Massa de produtos sólidos: 3,30 kg
+  Viagens dos sólidos: 1 viagem (até 70 kg por viagem)
   Chuva: choveu antes do limite: REAPLICAR
   - Orkestra SC
       dose prevista: 0,300 L/ha
@@ -316,8 +322,12 @@ demonstração, não da fazenda):
     desperdício: 0,000 kg
     percentual: 0,0%
 
-== 4. Erros tratados (nada é gravado) ==
-  taxa de 20 L/ha no drone -> Capacidade excedida: 132 L (máximo 70 L)
+== 4. Aplicação com mais de uma viagem (só calcula, não grava) ==
+  Taxa de 20 L/ha: calda de 132,00 L
+  Viagens da calda: 2 viagens (até 70 L por viagem)
+
+== 5. Erros tratados (nada é gravado) ==
+  taxa de aplicação zero -> Dado inválido: taxa (L/ha) (deve ser maior que zero)
   talhão com nome repetido -> Talhão inválido: chico1 (já existe nesta área)
   banco fora do ar -> Erro de persistência: salvar aplicação
 
@@ -357,17 +367,20 @@ aceitam vírgula ou ponto (`2,8`) e as datas são dia/mês/ano.
 
 | Opção | O que faz |
 |---|---|
-| 1. Cadastros | Nova área, talhão, insumo, aplicador (trator, drone ou bomba costal) e operação. Também corrige os hectares de um talhão. |
-| 2. Registrar aplicação | O fluxo principal, passo a passo. Mostra um resumo para conferir, grava pelo `AplicacaoService` e imprime o volume de calda, as quantidades, o desperdício e os alertas de chuva e de sobredose. Se a calda não couber no aplicador, mostra o erro, não grava nada e deixa tentar outra taxa. |
+| 1. Cadastros | Nova área, talhão, insumo, aplicador (trator, drone ou bomba costal) e operação. Para mudar ou apagar o que já existe, use as opções 8 e 9. |
+| 2. Registrar aplicação | O fluxo principal, passo a passo. Mostra um resumo para conferir (já com o volume de calda, a massa de sólidos e as viagens do aplicador), grava pelo `AplicacaoService` e imprime o volume de calda, as viagens, as quantidades, o desperdício e os alertas de chuva e de sobredose. Se a aplicação for maior que a capacidade de uma viagem, não é erro: ela é gravada inteira e o resultado diz quantas viagens são necessárias. |
 | 3. Consultas | Lista áreas e talhões, insumos, aplicadores, operações e aplicações (com o detalhe de cada uma). |
 | 4. Resumo de desperdício | Totais previstos, realizados e desperdiçados, separados em litros e quilos. |
-| 5. Calculadora | Uma opção para cada função de `lib/logica`: volume de calda, quantidade de produto, normalização e conversão de unidades, regras da chuva, da capacidade e da sobredose, desperdício e quantidade a comprar. Mostra também a mensagem de erro de cada função. |
+| 5. Calculadora | Uma opção para cada função de `lib/logica`: volume de calda, quantidade de produto, normalização e conversão de unidades, regras da chuva, da capacidade (com as viagens) e da sobredose, desperdício e quantidade a comprar. Mostra também a mensagem de erro de cada função. |
 | 6. Parâmetros | Muda a tolerância de sobredose, o limite da chuva e o fator de compra. |
 | 7. Carregar dados de exemplo | Cria, sem duplicar, a área Sede, os talhões Chico1 e Chico2, o drone DJI, a operação Pulverização e os insumos Orkestra SC e Boro Super. |
+| 8. Corrigir um registro | Área (nome), talhão (nome e hectares), insumo (nome, tipo e marca), aplicador (modelo e capacidades), operação (descrição) e aplicação (data, observação e dose realizada, em mL/ha, L/ha, g/ha ou kg/ha). Enter mantém o valor atual, um traço (`-`) apaga um campo opcional, e nada é gravado antes de você confirmar. |
+| 9. Excluir um registro | Área, talhão, insumo, aplicador, operação ou aplicação. O sistema **recusa** excluir o que está em uso (área com talhões; talhão, insumo, aplicador ou operação usados numa aplicação) e diz o que excluir antes. A confirmação começa em "não", e excluir não pode ser desfeito. |
 
 Quem nunca usou: opção **7** e depois a **2**. Sem `--mysql`, tudo fica na memória e some ao
 sair. Com `--mysql`, o que for cadastrado e registrado fica no banco compartilhado da equipe,
-então avise o time ou use nomes de teste.
+então avise o time ou use nomes de teste. Isso vale também para corrigir e excluir: com `--mysql`,
+a opção 9 apaga do banco que o BI lê, e o menu avisa isso antes de pedir a confirmação.
 
 ### Rodando no MySQL
 
@@ -444,7 +457,8 @@ Um caminho de uns 5 minutos:
    funções **devolvem um enum** e quem lança a exceção é o serviço. Mostre a regra das 3
    horas e o que está PENDENTE.
 5. **Demonstração (1 min).** Rode `dart run bin/main.dart`. Aponte três coisas: a
-   conversão de 300 mL/ha para 0,300 L/ha, o alerta REAPLICAR e o erro de capacidade. Se
+   conversão de 300 mL/ha para 0,300 L/ha, o alerta REAPLICAR e as viagens do drone (132 L
+   são 2 viagens de 70 L, sem erro). Se
    quiser mostrar ao vivo, use o menu (`dart run bin/caderno.dart`): opção 7 carrega os
    dados, opção 2 registra a aplicação e opção 5 mostra as funções de `lib/logica` uma a uma.
 6. **O SQL (30 s).** Mostre `lib/repositories/interfaces/` e diga: "o MySQL só implementa
@@ -469,8 +483,10 @@ Perguntas que podem aparecer:
   só como exemplo.
 - **Doses por 1000 L de calda para produto sólido** (`g/1000L`, `kg/1000L`): ainda não
   tratadas.
-- **Capacidade do trator:** ainda não foi levantada (fica nula).
-- **Aplicação com mais de uma carga:** como lançar ainda não foi combinado com a fazenda.
+- **Capacidade do trator:** ainda não foi levantada (fica nula, e as viagens dele não são
+  calculadas).
+- **Calda e sólidos no mesmo voo:** as viagens de cada um são calculadas separadamente.
+  Falta confirmar com a fazenda se os dois vão juntos no mesmo voo.
 - **Nomes do banco:** a PI-012 manda `agrogestor` e chave `id`; os scripts de seed recebidos
   usam `caderno_fazenda` e `id_<tabela>`. O grupo precisa escolher um padrão. Hoje o
   repositório MySQL segue o do banco (`caderno_fazenda`, `id_<tabela>`); se o padrão mudar,

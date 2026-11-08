@@ -2,11 +2,12 @@ import 'package:caderno_fazenda/cli/dados_exemplo.dart';
 import 'package:caderno_fazenda/cli/formato.dart';
 import 'package:caderno_fazenda/cli/interacao.dart';
 import 'package:caderno_fazenda/cli/menu_calculadora.dart';
+import 'package:caderno_fazenda/cli/menu_manutencao.dart';
 import 'package:caderno_fazenda/cli/terminal.dart';
-import 'package:caderno_fazenda/exceptions/capacidade_excedida_exception.dart';
 import 'package:caderno_fazenda/logica/alertas_operacionais.dart';
 import 'package:caderno_fazenda/logica/calculo_desperdicio.dart';
 import 'package:caderno_fazenda/models/aplicacao.dart';
+import 'package:caderno_fazenda/models/aplicador.dart';
 import 'package:caderno_fazenda/models/aplicador_fabrica.dart';
 import 'package:caderno_fazenda/models/area.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
@@ -84,6 +85,14 @@ class MenuCaderno {
     );
   }
 
+  MenuManutencao get _manutencao {
+    return MenuManutencao(
+      _ui,
+      _repositorios,
+      mostrarAplicacao: _detalharAplicacao,
+    );
+  }
+
   /// Mostra o menu principal e só volta quando o usuário sair (opção 0) ou a
   /// entrada de texto acabar.
   Future<void> executar() async {
@@ -103,6 +112,14 @@ class MenuCaderno {
           _parametrosOperacionais,
         ),
         OpcaoMenu('Carregar dados de exemplo', _carregarExemplo),
+        OpcaoMenu(
+          'Corrigir um registro (cadastros e aplicações)',
+          () => _manutencao.corrigir(),
+        ),
+        OpcaoMenu(
+          'Excluir um registro (cadastros e aplicações)',
+          () => _manutencao.excluir(),
+        ),
       ], saida: 'Sair');
       _ui.linha('\nAté logo!');
     } on EntradaEncerrada {
@@ -148,17 +165,20 @@ class MenuCaderno {
   // ---------------------------------------------------------------------
 
   Future<void> _menuCadastros() {
-    return _ui.menu('CADASTROS', [
-      OpcaoMenu('Nova área', _novaArea),
-      OpcaoMenu('Novo talhão', _novoTalhao),
-      OpcaoMenu('Novo insumo', _novoInsumo),
-      OpcaoMenu(
-        'Novo aplicador (trator, drone ou bomba costal)',
-        _novoAplicador,
-      ),
-      OpcaoMenu('Nova operação', _novaOperacao),
-      OpcaoMenu('Corrigir os hectares de um talhão', _corrigirHectares),
-    ], dica: 'Enter em branco cancela.');
+    return _ui.menu(
+      'CADASTROS',
+      [
+        OpcaoMenu('Nova área', _novaArea),
+        OpcaoMenu('Novo talhão', _novoTalhao),
+        OpcaoMenu('Novo insumo', _novoInsumo),
+        OpcaoMenu(
+          'Novo aplicador (trator, drone ou bomba costal)',
+          _novoAplicador,
+        ),
+        OpcaoMenu('Nova operação', _novaOperacao),
+      ],
+      dica: 'Enter em branco cancela. Para corrigir ou excluir, use as opções 8 e 9 do menu principal.',
+    );
   }
 
   Future<void> _novaArea() async {
@@ -203,33 +223,7 @@ class MenuCaderno {
       nome: nome,
       hectares: hectares,
     );
-    _ui.linha('Talhão cadastrado: ${talhao.obterDados()}');
-  }
-
-  Future<void> _corrigirHectares() async {
-    final talhoes = await _repositorios.talhoes.listarTodos();
-    if (talhoes.isEmpty) {
-      _ui.linha('Nenhum talhão cadastrado.');
-      return;
-    }
-    _ui.linha('Talhões:');
-    final talhao = _ui.escolherPorId('Id do talhão', talhoes, _descreverTalhao);
-    if (talhao == null) {
-      return;
-    }
-    final hectares = _ui.perguntarNumero(
-      'Novo tamanho em hectares',
-      minimo: 0,
-      exclusivo: true,
-    );
-    if (hectares == null) {
-      return;
-    }
-    final corrigido = await _talhaoService.corrigirHectares(
-      talhao.id!,
-      hectares,
-    );
-    _ui.linha('Talhão atualizado: ${corrigido.obterDados()}');
+    _ui.linha('Talhão cadastrado: [${talhao.id}] ${descreverTalhao(talhao)}');
   }
 
   Future<void> _novoInsumo() async {
@@ -254,7 +248,7 @@ class MenuCaderno {
     final insumo = await _repositorios.insumos.salvar(
       Insumo(nome: nome, tipo: tipo, marca: marca),
     );
-    _ui.linha('Insumo cadastrado: [${insumo.id}] ${_descreverInsumo(insumo)}');
+    _ui.linha('Insumo cadastrado: [${insumo.id}] ${descreverInsumo(insumo)}');
   }
 
   Future<void> _novoAplicador() async {
@@ -363,7 +357,7 @@ class MenuCaderno {
     final escolhidos = _ui.escolherVariosPorId(
       'Ids dos talhões',
       talhoes,
-      _descreverTalhao,
+      descreverTalhao,
     );
     if (escolhidos == null) {
       return;
@@ -376,16 +370,14 @@ class MenuCaderno {
 
     _ui.linha();
     final data = _ui.perguntarData('Data da aplicação', _agora());
-    final taxaDigitada = _ui.perguntarNumero(
+    final taxa = _ui.perguntarNumero(
       'Taxa de aplicação da calda (L/ha)',
       minimo: 0,
       exclusivo: true,
     );
-    if (taxaDigitada == null) {
+    if (taxa == null) {
       return;
     }
-    // Pode ser trocada mais adiante, se a calda não couber no aplicador.
-    var taxa = taxaDigitada;
 
     final itens = <_ItemDigitado>[];
     while (true) {
@@ -397,11 +389,7 @@ class MenuCaderno {
         break;
       }
       _ui.linha('\nInsumo ${itens.length + 1}:');
-      final insumo = _ui.escolherPorId(
-        'Id do insumo',
-        livres,
-        _descreverInsumo,
-      );
+      final insumo = _ui.escolherPorId('Id do insumo', livres, descreverInsumo);
       if (insumo == null) {
         return;
       }
@@ -422,14 +410,27 @@ class MenuCaderno {
     );
     final observacao = _ui.perguntarTexto('Observação [Enter = nenhuma]');
 
+    final talhaoIds = [for (final talhao in escolhidos) talhao.id!];
+    final doses = [for (final item in itens) item.dose];
+    // A capacidade do aplicador vale por viagem, então uma taxa digitada
+    // errada não é barrada por erro. A carga calculada aparece na conferência
+    // para dar tempo de perceber.
+    final carga = await _aplicacaoService.calcularCarga(
+      aplicadorId: aplicador.id!,
+      talhaoIds: talhaoIds,
+      doses: doses,
+      taxaLitrosPorHa: taxa,
+    );
+
     _conferir(
       data: data,
       operacao: operacao,
-      aplicador: aplicador.descreverCapacidade(),
+      aplicador: aplicador,
       talhoes: escolhidos,
       areaTotal: areaTotal,
       taxa: taxa,
       itens: itens,
+      carga: carga,
       horas: horas,
       observacao: observacao,
     );
@@ -438,37 +439,16 @@ class MenuCaderno {
       return;
     }
 
-    ResultadoAplicacao resultado;
-    while (true) {
-      try {
-        resultado = await _aplicacaoService.registrar(
-          data: data,
-          operacaoId: operacao.id!,
-          aplicadorId: aplicador.id!,
-          talhaoIds: [for (final talhao in escolhidos) talhao.id!],
-          doses: [for (final item in itens) item.dose],
-          taxaLitrosPorHa: taxa,
-          horasAteChuva: horas,
-          observacao: observacao,
-        );
-        break;
-      } on CapacidadeExcedidaException catch (erro) {
-        _ui.linha('\nNão foi possível registrar: $erro');
-        _ui.linha('Nada foi gravado.');
-        if (!_ui.confirmar('Tentar de novo com outra taxa de aplicação?')) {
-          return;
-        }
-        final nova = _ui.perguntarNumero(
-          'Nova taxa de aplicação (L/ha)',
-          minimo: 0,
-          exclusivo: true,
-        );
-        if (nova == null) {
-          return;
-        }
-        taxa = nova;
-      }
-    }
+    final resultado = await _aplicacaoService.registrar(
+      data: data,
+      operacaoId: operacao.id!,
+      aplicadorId: aplicador.id!,
+      talhaoIds: talhaoIds,
+      doses: doses,
+      taxaLitrosPorHa: taxa,
+      horasAteChuva: horas,
+      observacao: observacao,
+    );
     _mostrarResultado(resultado);
   }
 
@@ -503,18 +483,19 @@ class MenuCaderno {
   void _conferir({
     required DateTime data,
     required Operacao operacao,
-    required String aplicador,
+    required Aplicador aplicador,
     required List<Talhao> talhoes,
     required double areaTotal,
     required double taxa,
     required List<_ItemDigitado> itens,
+    required CargaAplicacao carga,
     required double? horas,
     required String? observacao,
   }) {
     _ui.secao('CONFERIR ANTES DE GRAVAR');
     _ui.linha('  Data: ${formatarData(data)}');
     _ui.linha('  Operação: ${operacao.descricao}');
-    _ui.linha('  Aplicador: $aplicador');
+    _ui.linha('  Aplicador: ${aplicador.descreverCapacidade()}');
     final nomes = talhoes.map((t) => t.nome).join(', ');
     _ui.linha('  Talhões: $nomes (${formatarNumero(areaTotal)} ha)');
     _ui.linha('  Taxa de aplicação: ${formatarCompacto(taxa)} L/ha');
@@ -531,11 +512,48 @@ class MenuCaderno {
         '$realizadaTexto',
       );
     }
+    _mostrarCarga(
+      aplicador: aplicador,
+      volumeL: carga.volumeCaldaL,
+      viagensCalda: carga.viagensCalda,
+      massaKg: carga.massaProdutosKg,
+      viagensSolidos: carga.viagensSolidos,
+    );
     if (horas != null) {
       _ui.linha('  Chuva: ${formatarCompacto(horas)} h depois da aplicação');
     }
     if (observacao != null) {
       _ui.linha('  Observação: $observacao');
+    }
+  }
+
+  /// Mostra a calda e os sólidos que a aplicação leva e as viagens que o
+  /// [aplicador] faz para levá-los. A capacidade vale por viagem: passar dela
+  /// só aumenta o número de viagens.
+  void _mostrarCarga({
+    required Aplicador aplicador,
+    required double? volumeL,
+    required int? viagensCalda,
+    required double? massaKg,
+    required int? viagensSolidos,
+  }) {
+    if (volumeL != null) {
+      _ui.linha('  Volume de calda: ${formatarNumero(volumeL)} L');
+      final texto = descreverViagens(
+        viagensCalda,
+        aplicador.capacidadeMaximaL,
+        'L',
+      );
+      _ui.linha('  Viagens da calda: $texto');
+    }
+    if (massaKg != null) {
+      _ui.linha('  Massa de produtos sólidos: ${formatarNumero(massaKg)} kg');
+      final texto = descreverViagens(
+        viagensSolidos,
+        aplicador.capacidadeMaximaKg,
+        'kg',
+      );
+      _ui.linha('  Viagens dos sólidos: $texto');
     }
   }
 
@@ -548,14 +566,13 @@ class MenuCaderno {
     _ui.linha('  Aplicador: ${aplicador.descreverCapacidade()}');
     _ui.linha('  Registrado em: ${aplicador.origemDoRegistro()}');
     _ui.linha('  Área total: ${formatarNumero(aplicacao.areaTotalHa)} ha');
-    final volume = resultado.volumeCaldaL;
-    if (volume != null) {
-      _ui.linha('  Volume de calda: ${formatarNumero(volume)} L');
-    }
-    final massa = resultado.massaProdutosKg;
-    if (massa != null) {
-      _ui.linha('  Massa de produtos sólidos: ${formatarNumero(massa)} kg');
-    }
+    _mostrarCarga(
+      aplicador: aplicador,
+      volumeL: resultado.volumeCaldaL,
+      viagensCalda: resultado.viagensCalda,
+      massaKg: resultado.massaProdutosKg,
+      viagensSolidos: resultado.viagensSolidos,
+    );
     _ui.linha('  Chuva: ${descreverChuva(resultado.chuva)}');
 
     final alertas = <String>[];
@@ -647,7 +664,7 @@ class MenuCaderno {
         total += talhao.hectares;
       }
       final quantidade = talhoes.length;
-      final palavra = _plural(quantidade, 'talhão', 'talhões');
+      final palavra = plural(quantidade, 'talhão', 'talhões');
       _ui.linha(
         '[${area.id}] ${area.nome} - $quantidade $palavra, '
         '${formatarNumero(total)} ha',
@@ -668,7 +685,7 @@ class MenuCaderno {
       return;
     }
     for (final insumo in insumos) {
-      _ui.linha('[${insumo.id}] ${_descreverInsumo(insumo)}');
+      _ui.linha('[${insumo.id}] ${descreverInsumo(insumo)}');
     }
   }
 
@@ -705,7 +722,7 @@ class MenuCaderno {
     final escolhida = _ui.escolherPorId(
       'Id da aplicação para ver os detalhes [Enter = voltar]',
       aplicacoes,
-      _descreverAplicacao,
+      descreverAplicacao,
     );
     if (escolhida != null) {
       _detalharAplicacao(escolhida);
@@ -826,8 +843,8 @@ class MenuCaderno {
     final dados = await garantirDadosExemplo(_repositorios);
     _ui.linha('\nDados de exemplo prontos (o que já existia foi mantido):');
     _ui.linha('  Área: ${dados.sede.nome}');
-    _ui.linha('  ${dados.chico1.obterDados()}');
-    _ui.linha('  ${dados.chico2.obterDados()}');
+    _ui.linha('  Talhão: ${descreverTalhao(dados.chico1)}');
+    _ui.linha('  Talhão: ${descreverTalhao(dados.chico2)}');
     _ui.linha('  ${dados.drone.descreverCapacidade()}');
     _ui.linha('  Operação: ${dados.operacao.descricao}');
     _ui.linha('  Insumos: ${dados.orkestra.nome} e ${dados.boro.nome}');
@@ -837,33 +854,6 @@ class MenuCaderno {
   // ---------------------------------------------------------------------
   // Textos de apoio
   // ---------------------------------------------------------------------
-
-  String _descreverInsumo(Insumo insumo) {
-    final marca = insumo.marca;
-    if (marca == null) {
-      return '${insumo.nome} (${insumo.tipo})';
-    }
-    return '${insumo.nome} (${insumo.tipo}, $marca)';
-  }
-
-  String _descreverTalhao(Talhao talhao) {
-    return '${talhao.area.nome} / ${talhao.nome} - '
-        '${formatarNumero(talhao.hectares)} ha';
-  }
-
-  String _descreverAplicacao(Aplicacao aplicacao) {
-    final talhoes = aplicacao.talhoes.map((t) => t.nome).join(', ');
-    final area = formatarNumero(aplicacao.areaTotalHa);
-    final quantidade = aplicacao.insumos.length;
-    final palavra = _plural(quantidade, 'insumo', 'insumos');
-    return '${formatarData(aplicacao.data)} | ${aplicacao.operacao.descricao} | '
-        '${aplicacao.aplicador.tipo} | $talhoes ($area ha) | '
-        '$quantidade $palavra';
-  }
-
-  String _plural(int quantidade, String singular, String plural) {
-    return quantidade == 1 ? singular : plural;
-  }
 
   bool _mesmoTexto(String a, String b) {
     return a.trim().toLowerCase() == b.trim().toLowerCase();

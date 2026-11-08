@@ -276,43 +276,195 @@ void main() {
     });
   });
 
-  group('registrar - capacidade do aplicador', () {
-    test('calda acima da capacidade e recusada', () async {
-      var mensagem = await mensagemDoErroAsync(() {
-        return registrar(comTaxa: 20);
-      });
+  group('registrar - viagens do aplicador', () {
+    test('calda acima da capacidade vira mais de uma viagem', () async {
+      var resultado = await registrar(comTaxa: 20);
 
-      expect(mensagem, 'Capacidade excedida: 132 L (máximo 70 L)');
-      expect(await aplicacoes.listarTodos(), isEmpty);
+      expect(resultado.volumeCaldaL, closeTo(132, 1e-9));
+      expect(resultado.viagensCalda, 2);
+      expect((await aplicacoes.listarTodos()).length, 1);
     });
 
-    test('volume igual a capacidade cabe', () async {
+    test('volume igual a capacidade e uma viagem so', () async {
       var exato = Drone(capacidadeMaximaL: 66);
       await aplicadores.salvar(exato);
 
       var resultado = await registrar(comAplicador: exato.id);
 
       expect(resultado.volumeCaldaL, closeTo(66, 1e-9));
+      expect(resultado.viagensCalda, 1);
     });
 
-    test('massa de solidos acima da capacidade em kg e recusada', () async {
+    test('um pouco acima da capacidade pede a segunda viagem', () async {
+      var justo = Drone(capacidadeMaximaL: 65.9);
+      await aplicadores.salvar(justo);
+
+      var resultado = await registrar(comAplicador: justo.id);
+
+      expect(resultado.viagensCalda, 2);
+    });
+
+    test('76 kg de solido em um drone de 70 kg sao 2 viagens', () async {
+      // Boro Super a 20 kg/ha no Chico2 (3,8 ha): 76 kg.
+      var dose = DoseInformada(
+        insumoId: idBoro,
+        dosePrevista: 20,
+        unidade: 'kg/ha',
+      );
+
+      var resultado = await registrar(comDoses: [dose], comTalhoes: [idChico2]);
+
+      expect(resultado.massaProdutosKg, closeTo(76, 1e-9));
+      expect(resultado.viagensSolidos, 2);
+      expect(resultado.viagensCalda, isNull);
+      expect((await aplicacoes.listarTodos()).length, 1);
+    });
+
+    test('massa de solidos em varias viagens', () async {
       var dose = DoseInformada(
         insumoId: idBoro,
         dosePrevista: 20000,
         unidade: 'g/ha',
       );
 
-      var mensagem = await mensagemDoErroAsync(() {
-        return registrar(comDoses: [dose]);
-      });
+      var resultado = await registrar(comDoses: [dose]);
 
-      expect(mensagem, 'Capacidade excedida: 132 kg (máximo 70 kg)');
+      expect(resultado.massaProdutosKg, closeTo(132, 1e-9));
+      expect(resultado.viagensSolidos, 2);
     });
 
-    test('aplicador sem capacidade (trator) nao e conferido', () async {
+    test('calda e solidos tem viagens separadas', () async {
+      var resultado = await registrar(comTaxa: 20);
+
+      expect(resultado.viagensCalda, 2);
+      expect(resultado.massaProdutosKg, closeTo(3.3, 1e-9));
+      expect(resultado.viagensSolidos, 1);
+    });
+
+    test('aplicador sem capacidade (trator) nao calcula as viagens', () async {
       var resultado = await registrar(comTaxa: 100, comAplicador: idTrator);
 
       expect(resultado.volumeCaldaL, closeTo(660, 1e-9));
+      expect(resultado.viagensCalda, isNull);
+      expect(resultado.viagensSolidos, isNull);
+    });
+
+    test('capacidade so em litros: os solidos ficam sem viagens', () async {
+      var soLitros = Drone(capacidadeMaximaL: 70);
+      await aplicadores.salvar(soLitros);
+
+      var resultado = await registrar(comAplicador: soLitros.id);
+
+      expect(resultado.viagensCalda, 1);
+      expect(resultado.massaProdutosKg, isNotNull);
+      expect(resultado.viagensSolidos, isNull);
+    });
+
+    test('so liquidos: nao ha viagens de solidos', () async {
+      var resultado = await registrar(comDoses: [liquida()]);
+
+      expect(resultado.viagensCalda, 1);
+      expect(resultado.viagensSolidos, isNull);
+    });
+  });
+
+  group('calcularCarga', () {
+    Future<CargaAplicacao> carga({
+      double comTaxa = 10,
+      List<DoseInformada>? comDoses,
+      List<int>? comTalhoes,
+      int? comAplicador,
+    }) {
+      return servico.calcularCarga(
+        aplicadorId: comAplicador ?? idDrone,
+        talhaoIds: comTalhoes ?? [idChico1, idChico2],
+        doses: comDoses ?? [liquida(), solida()],
+        taxaLitrosPorHa: comTaxa,
+      );
+    }
+
+    test('calcula a carga e as viagens sem gravar nada', () async {
+      var resultado = await carga(comTaxa: 20);
+
+      expect(resultado.volumeCaldaL, closeTo(132, 1e-9));
+      expect(resultado.viagensCalda, 2);
+      expect(resultado.massaProdutosKg, closeTo(3.3, 1e-9));
+      expect(resultado.viagensSolidos, 1);
+      expect(await aplicacoes.listarTodos(), isEmpty);
+    });
+
+    test('da os mesmos numeros que o registro', () async {
+      var previa = await carga(comTaxa: 20);
+      var registro = await registrar(comTaxa: 20);
+
+      expect(previa.volumeCaldaL, registro.volumeCaldaL);
+      expect(previa.massaProdutosKg, registro.massaProdutosKg);
+      expect(previa.viagensCalda, registro.viagensCalda);
+      expect(previa.viagensSolidos, registro.viagensSolidos);
+    });
+
+    test('aplicador sem capacidade nao tem viagens', () async {
+      var resultado = await carga(comTaxa: 100, comAplicador: idTrator);
+
+      expect(resultado.volumeCaldaL, closeTo(660, 1e-9));
+      expect(resultado.viagensCalda, isNull);
+      expect(resultado.viagensSolidos, isNull);
+    });
+
+    test('taxa zero, negativa ou invalida e recusada', () async {
+      for (var taxa in [0.0, -5.0, double.nan, double.infinity]) {
+        await expectLater(carga(comTaxa: taxa), recusaDado);
+      }
+    });
+
+    test('registro que nao existe', () async {
+      var semAplicador = await mensagemDoErroAsync(() {
+        return carga(comAplicador: 99);
+      });
+      var semTalhao = await mensagemDoErroAsync(() {
+        return carga(comTalhoes: [idChico1, 99]);
+      });
+      var dose = DoseInformada(insumoId: 99, dosePrevista: 1, unidade: 'L/ha');
+      var semInsumo = await mensagemDoErroAsync(() {
+        return carga(comDoses: [dose]);
+      });
+
+      expect(semAplicador, 'Registro não encontrado: aplicador 99');
+      expect(semTalhao, 'Registro não encontrado: talhão 99');
+      expect(semInsumo, 'Registro não encontrado: insumo 99');
+    });
+
+    test('listas vazias ou com repetidos sao recusadas', () async {
+      await expectLater(carga(comTalhoes: []), recusaDado);
+      await expectLater(carga(comDoses: []), recusaDado);
+      await expectLater(carga(comTalhoes: [idChico1, idChico1]), recusaDado);
+      await expectLater(carga(comDoses: [liquida(), liquida()]), recusaDado);
+    });
+
+    test('dose invalida e recusada com a mesma mensagem do registro', () async {
+      var negativa = DoseInformada(
+        insumoId: idOrkestra,
+        dosePrevista: -1,
+        unidade: 'mL/ha',
+      );
+      var desconhecida = DoseInformada(
+        insumoId: idOrkestra,
+        dosePrevista: 1,
+        unidade: 'caixa/ha',
+      );
+
+      var mensagemNegativa = await mensagemDoErroAsync(() {
+        return carga(comDoses: [negativa]);
+      });
+      var mensagemDesconhecida = await mensagemDoErroAsync(() {
+        return carga(comDoses: [desconhecida]);
+      });
+
+      expect(mensagemNegativa, 'Dose inválida: -1.0 mL/ha');
+      expect(
+        mensagemDesconhecida,
+        'Dado inválido: unidade da dose (Unidade desconhecida: caixa/ha)',
+      );
     });
   });
 

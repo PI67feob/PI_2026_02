@@ -181,24 +181,37 @@ void main() {
   });
 
   group('capacidade', () {
-    test('calda que cabe', () async {
+    test('calda que cabe numa viagem só', () async {
       final saida = await calcular(['7', '66', '70', '0']);
-      expect(saida, contains('Resultado: cabe no aplicador'));
+      expect(saida, contains('Resultado: cabe numa viagem só'));
+      expect(
+        saida,
+        contains('Viagens necessárias: 1 viagem (até 70 L por viagem)'),
+      );
     });
 
-    test('calda que passa da capacidade', () async {
+    test('calda que passa da capacidade pede mais viagens', () async {
       final saida = await calcular(['7', '132', '70', '0']);
-      expect(saida, contains('Resultado: EXCEDEU a capacidade do aplicador'));
+      expect(
+        saida,
+        contains('Resultado: não cabe numa viagem só (precisa de mais de uma)'),
+      );
+      expect(
+        saida,
+        contains('Viagens necessárias: 2 viagens (até 70 L por viagem)'),
+      );
     });
 
-    test('volume igual à capacidade ainda cabe', () async {
+    test('volume igual à capacidade ainda é uma viagem', () async {
       final saida = await calcular(['7', '70', '70', '0']);
-      expect(saida, contains('Resultado: cabe no aplicador'));
+      expect(saida, contains('Resultado: cabe numa viagem só'));
+      expect(saida, contains('Viagens necessárias: 1 viagem'));
     });
 
-    test('capacidade zero é entrada inválida', () async {
+    test('capacidade zero é entrada inválida e não calcula viagens', () async {
       final saida = await calcular(['7', '10', '0', '0']);
       expect(saida, contains('valores inválidos'));
+      expect(saida, isNot(contains('Viagens necessárias')));
     });
   });
 

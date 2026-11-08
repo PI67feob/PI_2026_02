@@ -43,11 +43,47 @@ class TalhaoService {
     return _talhoes.listarPorArea(areaId);
   }
 
+  /// Corrige o nome e/ou o tamanho de um talhão.
+  ///
+  /// O que não for informado fica como está, e a área do talhão não muda. Tudo
+  /// é conferido antes de gravar: se algum valor for recusado, o talhão
+  /// continua exatamente como estava.
+  ///
+  /// Lança [TalhaoInvalidoException] se os hectares não forem maiores que zero
+  /// ou se já houver outro talhão com o mesmo nome na área,
+  /// `DadoInvalidoException` se o nome ficar vazio e
+  /// `RegistroNaoEncontradoException` se o talhão não existir.
+  Future<Talhao> corrigir(
+    int talhaoId, {
+    String? nome,
+    double? hectares,
+  }) async {
+    final talhao = await _talhoes.exigirPorId(talhaoId, 'talhão');
+    // Um talhão montado só para conferir os valores novos: se algum for
+    // inválido, o erro sai aqui, antes de mexer no talhão gravado.
+    final conferido = Talhao(
+      nome: nome ?? talhao.nome,
+      hectares: hectares ?? talhao.hectares,
+      area: talhao.area,
+    );
+    final areaId = talhao.area.id;
+    final outro = areaId == null
+        ? null
+        : await _talhoes.buscarPorAreaENome(areaId, conferido.nome);
+    if (outro != null && !outro.mesmoRegistro(talhao)) {
+      throw TalhaoInvalidoException(
+        conferido.nome,
+        motivo: 'já existe nesta área',
+      );
+    }
+    talhao.nome = conferido.nome;
+    talhao.hectares = conferido.hectares;
+    return _talhoes.salvar(talhao);
+  }
+
   /// Corrige o tamanho de um talhão. Lança [TalhaoInvalidoException] se os
   /// hectares não forem maiores que zero.
-  Future<Talhao> corrigirHectares(int talhaoId, double hectares) async {
-    final talhao = await _talhoes.exigirPorId(talhaoId, 'talhão');
-    talhao.hectares = hectares;
-    return _talhoes.salvar(talhao);
+  Future<Talhao> corrigirHectares(int talhaoId, double hectares) {
+    return corrigir(talhaoId, hectares: hectares);
   }
 }

@@ -190,4 +190,95 @@ void main() {
       );
     });
   });
+
+  group('Funcao 7 - viagensNecessarias', () {
+    test('normal: 132 L em um aplicador de 70 L precisam de 2 viagens', () {
+      expect(viagensNecessarias(132, 70), equals(2));
+    });
+
+    test('normal: 76 kg em um drone de 70 kg precisam de 2 viagens', () {
+      expect(viagensNecessarias(76, 70), equals(2));
+    });
+
+    test('normal: 150 L em um aplicador de 70 L precisam de 3 viagens', () {
+      expect(viagensNecessarias(150, 70), equals(3));
+    });
+
+    test('normal: quantidade menor que a capacidade e 1 viagem', () {
+      expect(viagensNecessarias(66, 70), equals(1));
+    });
+
+    test('limite: quantidade igual a capacidade e 1 viagem', () {
+      expect(viagensNecessarias(70, 70), equals(1));
+    });
+
+    test('limite: um pouco acima da capacidade ja pede a 2a viagem', () {
+      expect(viagensNecessarias(70.01, 70), equals(2));
+    });
+
+    test('limite: multiplo exato da capacidade nao cria viagem extra', () {
+      expect(viagensNecessarias(140, 70), equals(2));
+      expect(viagensNecessarias(210, 70), equals(3));
+    });
+
+    test('limite: erro de ponto flutuante nao cria viagem extra', () {
+      // No computador, 2.1 / 0.7 da 3.0000000000000004.
+      expect(viagensNecessarias(2.1, 0.7), equals(3));
+    });
+
+    test('limite: quantidade zero precisa de 0 viagem', () {
+      expect(viagensNecessarias(0, 70), equals(0));
+    });
+
+    test('limite: quantidade minuscula, mas maior que zero, e 1 viagem', () {
+      expect(viagensNecessarias(1e-12, 70), equals(1));
+    });
+
+    test('invalido: quantidade negativa lanca excecao', () {
+      expect(() => viagensNecessarias(-1, 70), throwsA(isA<CaldaException>()));
+    });
+
+    test('invalido: quantidade que nao e numero lanca excecao', () {
+      expect(
+        () => viagensNecessarias(double.nan, 70),
+        throwsA(isA<CaldaException>()),
+      );
+      expect(
+        () => viagensNecessarias(double.infinity, 70),
+        throwsA(isA<CaldaException>()),
+      );
+    });
+
+    test('invalido: capacidade zero, negativa ou invalida lanca excecao', () {
+      for (final capacidade in [0.0, -70.0, double.nan, double.infinity]) {
+        expect(
+          () => viagensNecessarias(10, capacidade),
+          throwsA(isA<CaldaException>()),
+        );
+      }
+    });
+
+    test('invalido: numero absurdo de viagens lanca excecao', () {
+      expect(() => viagensNecessarias(1e20, 1), throwsA(isA<CaldaException>()));
+    });
+
+    test('mensagens dos erros', () {
+      var mensagens = <String>[];
+      for (final acao in [
+        () => viagensNecessarias(-1, 70),
+        () => viagensNecessarias(10, 0),
+      ]) {
+        try {
+          acao();
+        } on CaldaException catch (erro) {
+          mensagens.add(erro.message);
+        }
+      }
+
+      expect(mensagens, [
+        'A quantidade nao pode ser negativa.',
+        'A capacidade por viagem deve ser maior que zero.',
+      ]);
+    });
+  });
 }

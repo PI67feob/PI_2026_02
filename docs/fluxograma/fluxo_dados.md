@@ -46,7 +46,7 @@ flowchart TD
         NSOL["TRATAMENTO 3b<br/>Normalizar dose sólida para kg/ha<br/>normalizarDoseMassa<br/>lib/logica/calculos_calda.dart"]
         MONTA["TRATAMENTO 4<br/>Montar a aplicação<br/>Aplicacao<br/>lib/models/aplicacao.dart"]
         VOL["TRATAMENTO 5<br/>Calcular volume de calda e massa de sólidos<br/>volumeCalda e quantidadeProdutoPorHa<br/>lib/logica/calculos_calda.dart"]
-        CAP{"DECISÃO 6<br/>O volume passou da capacidade do aplicador?<br/>avaliarCapacidade<br/>lib/logica/alertas_operacionais.dart"}
+        CAP["TRATAMENTO 6<br/>Calcular as viagens do aplicador (a capacidade vale por viagem)<br/>viagensNecessarias<br/>lib/logica/calculos_calda.dart"]
         CHUVA{"DECISÃO 7<br/>Choveu antes de 3 horas?<br/>avaliarChuva<br/>lib/logica/alertas_operacionais.dart"}
         REAP[/"SAÍDA<br/>Alerta: REAPLICAR"/]
         COMPRA["TRATAMENTO 8a<br/>Aplicar o fator de compra 0,95<br/>quantidadeAComprar<br/>lib/logica/calculo_desperdicio.dart"]
@@ -61,7 +61,6 @@ flowchart TD
     ERRO1(["ERRO TRATADO<br/>DadoInvalidoException<br/>taxa inválida, nada é gravado"])
     ERRO2(["ERRO TRATADO<br/>RegistroNaoEncontradoException<br/>nada é gravado"])
     ERRO3(["ERRO TRATADO<br/>DadoInvalidoException ou DoseInvalidaException<br/>nada é gravado"])
-    ERRO4(["ERRO TRATADO<br/>CapacidadeExcedidaException<br/>nada é gravado"])
 
     TRANSC --> TAXA
     TAXA -->|"não"| ERRO1
@@ -75,8 +74,7 @@ flowchart TD
     NSOL --> MONTA
     MONTA --> VOL
     VOL --> CAP
-    CAP -->|"excedeu"| ERRO4
-    CAP -->|"cabe no aplicador"| CHUVA
+    CAP --> CHUVA
     CHUVA -->|"menos de 3 h"| REAP
     CHUVA -->|"3 h ou mais, ou sem chuva"| COMPRA
     REAP --> COMPRA
@@ -117,9 +115,9 @@ flowchart TD
 
     class FICHA,DRONE entrada
     class REAP,STATUS,RESULT,RESUMOSAIDA,DASH saida
-    class TAXA,UNID,CAP,CHUVA,SOBRE decisao
-    class TRANSC,BUSCA,NLIQ,NSOL,MONTA,VOL,COMPRA,DESV,SALVA,RESUMO,PBI tratamento
-    class ERRO1,ERRO2,ERRO3,ERRO4,ERRO5 erro
+    class TAXA,UNID,CHUVA,SOBRE decisao
+    class TRANSC,BUSCA,NLIQ,NSOL,MONTA,VOL,CAP,COMPRA,DESV,SALVA,RESUMO,PBI tratamento
+    class ERRO1,ERRO2,ERRO3,ERRO5 erro
     class MYSQL,TRIG banco
 ```
 
@@ -140,7 +138,6 @@ flowchart TD
 | --- | --- |
 | **1. A taxa é maior que zero?** | Sem taxa de aplicação (L/ha) não existe volume de calda nem conversão de dose por 1000 L. Recusar logo evita contas sem sentido nas etapas seguintes. |
 | **3. Dose em qual unidade? Líquido ou sólido?** | A ficha traz unidades variadas e o banco só aceita `L/ha` e `kg/ha`. Litros e quilos nunca são convertidos entre si, porque isso exigiria a densidade do produto, que a fazenda não tem. |
-| **6. O volume passou da capacidade?** | O tanque do aplicador tem um limite máximo. A função só decide (`dentroDaCapacidade`, `excedeu` ou `entradaInvalida`) e é o serviço que lança `CapacidadeExcedidaException`. Volume igual à capacidade é aceito. |
 | **7. Choveu antes de 3 horas?** | Regra da fazenda: chuva em menos de 3 horas depois da aplicação exige reaplicar. O limite é parâmetro (`limiteChuvaHoras`). **PENDENTE:** o caso de exatamente 3 horas não foi definido pela fazenda; hoje o sistema não manda reaplicar. |
 | **8c. A dose realizada passou da prevista?** | Aplicar mais do que o previsto é sobredose. A tolerância (em %) é parâmetro obrigatório, porque quem define o valor aceitável é o agrônomo: até o previsto é `ok`, até a tolerância é `atenção`, acima dela é `crítico`. |
 
@@ -153,6 +150,7 @@ flowchart TD
 | **3a e 3b. Normalizar a dose** | Converte tudo para a base do banco: mL/ha vira L/ha (divide por 1000), L/1000L vira L/ha (usa a taxa) e g/ha vira kg/ha. Assim todas as doses ficam comparáveis. |
 | **4. Montar a aplicação** | A classe `Aplicacao` garante as próprias regras: ao menos um talhão e um insumo, sem repetição, data sem horário. A regra fica no objeto e não se espalha pelo código. |
 | **5. Calcular volume e massa** | Volume de calda = área total x taxa. Ele não é gravado no banco (decisão D1 em aberto): é sempre calculado. A massa de sólidos soma as doses previstas (kg/ha) vezes a área. |
+| **6. Calcular as viagens** | O tanque do aplicador tem um limite máximo POR VIAGEM (voo do drone, enchida da bomba, carga do trator). Passar dele não é erro: a aplicação só exige mais viagens. `viagensNecessarias` divide a quantidade pela capacidade e arredonda para cima; quantidade igual à capacidade é 1 viagem. Calda (em L) e sólidos (em kg) têm as viagens calculadas separadamente, e sem capacidade cadastrada (o trator) as viagens não são calculadas. |
 | **8a. Fator de compra** | A fazenda compra 5% a menos do que o cálculo indica, ou seja, 95%. O fator é parâmetro (`fatorCompra`), para a regra não ficar escondida dentro da conta. |
 | **8b. Desvio e percentual de desperdício** | O desvio é a dose realizada menos a prevista. O percentual divide o desvio pela dose prevista; aplicar menos do que o previsto não é desperdício e dá 0, nunca valor negativo. |
 | **9. Gravar** | `AplicacaoRepository.salvar` é a única porta de saída para o banco. Hoje grava em memória; o repositório MySQL (PI-023) grava as três tabelas da aplicação numa transação. |
@@ -171,7 +169,7 @@ dois talhões somando 6,6 ha, taxa de 10 L/ha, drone com capacidade de 70 L.
 | Decisão 3 | Orkestra é volume (mL/ha); Boro é massa (g/ha). |
 | Tratamento 3 | Orkestra: 0,300 e 0,345 L/ha. Boro: 0,500 e 0,450 kg/ha. |
 | Tratamento 5 | Volume de calda: 6,6 ha x 10 L/ha = 66 L. Massa de sólidos: 3,3 kg. |
-| Decisão 6 | 66 L cabe nos 70 L do drone. Com taxa de 20 L/ha daria 132 L e o sistema recusa. |
+| Tratamento 6 | 66 L cabem em uma viagem do drone (70 L por voo): 1 viagem. Com taxa de 20 L/ha seriam 132 L, ou seja, 2 viagens: o sistema grava do mesmo jeito e informa as viagens. |
 | Decisão 7 | 2,5 h é menos que 3 h: **REAPLICAR**. |
 | Tratamento 8 | Orkestra: a comprar 1,881 L (95% de 1,980 L) e desperdício de 15,0%. Boro: desperdício de 0,0%. |
 | Decisão 8c | Orkestra passou 15% do previsto, acima da tolerância de 10% do exemplo: **crítico**. Boro: `ok`. |

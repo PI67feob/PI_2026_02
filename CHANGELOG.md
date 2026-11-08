@@ -31,6 +31,24 @@
   cadastros de exemplo sem duplicar.
 - Testes do menu em `test/cli/`, com o `TerminalSimulado` (terminal com respostas prontas).
 - Testes para tudo o que foi adicionado.
+- `test/cli/sessoes_aleatorias_test.dart`: 250 sessões sorteadas no menu (semente fixa) que
+  falham se aparecer "Erro inesperado" ou se sobrar um registro apontando para outro que
+  foi excluído.
+- `viagensNecessarias` (`lib/logica/calculos_calda.dart`): quantas viagens o aplicador faz
+  para levar uma quantidade (divisão arredondada para cima).
+- `AplicacaoService.calcularCarga`: calcula, sem gravar, o volume de calda, a massa de
+  sólidos e as viagens. O menu usa na conferência antes de gravar.
+- `ResultadoAplicacao.viagensCalda` e `viagensSolidos`.
+- Menu: opções **8 (Corrigir um registro)** e **9 (Excluir um registro)** para área, talhão,
+  insumo, aplicador, operação e aplicação (código em `lib/cli/menu_manutencao.dart`).
+  Corrigir mostra o que vai mudar e só grava depois da confirmação; excluir recusa o que
+  está em uso e pede a confirmação (padrão "não"). A dose realizada de uma aplicação é
+  corrigida em mL/ha, L/ha, g/ha ou kg/ha, com aviso quando passa de 10 vezes a prevista.
+- `ManutencaoService` (`lib/services/manutencao_service.dart`) e
+  `ExclusaoNegadaException`: as regras de corrigir e excluir, iguais na memória e no MySQL.
+- `Interacao.editarTexto`, `editarTextoOpcional`, `editarNumero`, `editarNumeroOpcional` e
+  `editarData` (Enter mantém o valor atual), e `plural`, `descreverInsumo`,
+  `descreverTalhao` e `descreverAplicacao` em `formato.dart`.
 
 ### Alterado
 
@@ -52,6 +70,33 @@
   `lib/cli/formato.dart`, em vez de ter cópias próprias. A saída da demonstração não mudou.
 - `README.md`: seção "Usando o menu" e o menu na estrutura, na arquitetura e no roteiro da
   apresentação.
+- A capacidade do aplicador passou a valer **por viagem**: uma aplicação maior que ela não é
+  mais recusada, é gravada inteira e o resultado informa as viagens necessárias (o drone de
+  70 kg aplicando 76 kg faz 2 viagens). O menu mostra a carga e as viagens na conferência e
+  no resultado, e não pergunta mais por "outra taxa". A calculadora (opção Capacidade)
+  também mostra as viagens. `avaliarCapacidade` e `ResultadoCapacidade` continuam, agora
+  com o sentido "cabe numa viagem só?".
+- `bin/main.dart`: o exemplo de erro de capacidade virou um exemplo de aplicação com mais de
+  uma viagem (só calcula, não grava). A saída da demonstração mudou nessa parte.
+- `TalhaoService.corrigir` corrige o nome e/ou os hectares (confere o nome repetido na área
+  e não altera nada se algum valor for recusado). `corrigirHectares` continua e usa o novo
+  método.
+- Menu: a opção "Corrigir os hectares" saiu de Cadastros e passou para a opção 8
+  (Talhão). Os números das opções 1 a 7 não mudaram.
+- Menu: o talhão cadastrado ou corrigido aparece como `[1] Sede / Chico1 - 2,80 ha` (com
+  vírgula e o tamanho em ha), e a lista dos dados de exemplo também. A demonstração
+  (`bin/main.dart`) continua mostrando o `obterDados()` do model.
+
+### Corrigido
+
+- `avaliarSobredose`: uma dose exatamente na tolerância (por exemplo 0,33 contra 0,3 com
+  tolerância de 10%, ou 330 contra 300 mL/ha) saía como "crítico" por causa do
+  arredondamento do ponto flutuante (10,000000000000009%). Agora é "atenção", como a regra
+  diz ("menor ou igual à tolerância"). Mexe em `lib/logica/alertas_operacionais.dart`.
+
+### Removido
+
+- `CapacidadeExcedidaException` e o teste dela, que deixaram de ser usados.
 
 ## 1.0.0
 

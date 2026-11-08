@@ -284,3 +284,58 @@ double normalizarDoseMassa(double dose, String unidadeDose) {
       throw UnidadeDesconhecidaException(unidadeDose);
   }
 }
+
+/// Funcao 7 - calcula quantas viagens o aplicador precisa fazer.
+///
+/// A capacidade do aplicador vale POR VIAGEM (um voo do drone, uma enchida da
+/// bomba costal, uma carga do trator). Uma aplicacao maior que a capacidade
+/// nao e erro: ela so exige mais de uma viagem.
+///
+/// Entrada:
+/// - [quantidade]: volume de calda (L) ou massa de produto (kg) a aplicar.
+/// - [capacidadePorViagem]: capacidade maxima do aplicador em UMA viagem, na
+///   mesma unidade de [quantidade].
+///
+/// Saida:
+/// - Retorna o numero de viagens: a divisao arredondada para cima. Quantidade
+///   igual a capacidade ainda e 1 viagem; quantidade zero e 0 viagem.
+///
+/// Observacao:
+/// - A divisao e arredondada em 9 casas antes do arredondamento para cima.
+///   Sem isso, um erro minusculo do computador (2.1 / 0.7 da
+///   3.0000000000000004) criaria uma viagem que nao existe.
+///
+/// Erros:
+/// - Lanca [CaldaException] se [quantidade] for negativa ou nao for um numero.
+/// - Lanca [CaldaException] se [capacidadePorViagem] for menor ou igual a zero
+///   ou nao for um numero.
+/// - Lanca [CaldaException] se a conta der um numero de viagens absurdo.
+int viagensNecessarias(double quantidade, double capacidadePorViagem) {
+  if (!quantidade.isFinite) {
+    throw CaldaException('A quantidade deve ser um numero valido.');
+  }
+
+  if (quantidade < 0) {
+    throw CaldaException('A quantidade nao pode ser negativa.');
+  }
+
+  if (!capacidadePorViagem.isFinite || capacidadePorViagem <= 0) {
+    throw CaldaException('A capacidade por viagem deve ser maior que zero.');
+  }
+
+  final razao = quantidade / capacidadePorViagem;
+  if (!razao.isFinite || razao > 1e15) {
+    throw CaldaException(
+      'A quantidade e grande demais para a capacidade informada.',
+    );
+  }
+
+  final viagens = double.parse(razao.toStringAsFixed(9)).ceil();
+
+  // Quantidade minuscula, mas maior que zero, ainda precisa de uma viagem.
+  if (quantidade > 0 && viagens == 0) {
+    return 1;
+  }
+
+  return viagens;
+}

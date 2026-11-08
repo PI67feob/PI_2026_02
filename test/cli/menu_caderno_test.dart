@@ -1,5 +1,6 @@
 import 'package:caderno_fazenda/cli/dados_exemplo.dart';
 import 'package:caderno_fazenda/cli/menu_caderno.dart';
+import 'package:caderno_fazenda/models/aplicador_fabrica.dart';
 import 'package:caderno_fazenda/repositories/memoria/repositorios_memoria.dart';
 import 'package:caderno_fazenda/repositories/repositorios.dart';
 import 'package:test/test.dart';
@@ -108,10 +109,7 @@ void main() {
       ]);
       final saida = sessao.saida;
       expect(saida, contains('Área cadastrada: [1] Sede'));
-      expect(
-        saida,
-        contains('Talhão cadastrado: nome:Chico1 - id:1 - hectares:2.8'),
-      );
+      expect(saida, contains('Talhão cadastrado: [1] Sede / Chico1 - 2,80 ha'));
       expect(saida, contains('Insumo cadastrado: [1] Orkestra SC (Fungicida)'));
       expect(
         saida,
@@ -251,24 +249,6 @@ void main() {
       },
     );
 
-    test('corrige os hectares de um talhão', () async {
-      final repos = await _comExemplo();
-      final sessao = await _rodar([
-        '1',
-        '6',
-        '1',
-        '3',
-        '0',
-        '0',
-      ], repositorios: repos);
-      expect(
-        sessao.saida,
-        contains('Talhão atualizado: nome:Chico1 - id:1 - hectares:3.0'),
-      );
-      final chico1 = await repos.talhoes.buscarPorId(1);
-      expect(chico1?.hectares, 3.0);
-    });
-
     test(
       'aplicador com capacidade zero é recusado com a mensagem do sistema',
       () async {
@@ -319,7 +299,15 @@ void main() {
       expect(saida, contains('=== APLICAÇÃO 1 REGISTRADA ==='));
       expect(saida, contains('Registrado em: app do drone e ficha de papel'));
       expect(saida, contains('Volume de calda: 66,00 L'));
+      expect(
+        saida,
+        contains('Viagens da calda: 1 viagem (até 70 L por viagem)'),
+      );
       expect(saida, contains('Massa de produtos sólidos: 3,30 kg'));
+      expect(
+        saida,
+        contains('Viagens dos sólidos: 1 viagem (até 70 kg por viagem)'),
+      );
       expect(saida, contains('dose prevista: 0,300 L/ha'));
       expect(saida, contains('dose realizada: 0,345 L/ha'));
       expect(saida, contains('quantidade a comprar (fator 0,95): 1,881 L'));
@@ -367,45 +355,94 @@ void main() {
       expect(sessao.saida, contains('Alertas: nenhum.'));
     });
 
-    test(
-      'capacidade excedida: nada é gravado e dá para tentar outra taxa',
-      () async {
-        final repos = await _comExemplo();
-        final sessao = await _rodar([
-          ..._registrarDemonstracao(taxa: '20'),
-          's', // tentar de novo
-          '10', // nova taxa
-          '0',
-        ], repositorios: repos);
-        final saida = sessao.saida;
-        expect(
-          saida,
-          contains(
-            'Não foi possível registrar: Capacidade excedida: 132 L (máximo 70 L)',
-          ),
-        );
-        expect(saida, contains('Nada foi gravado.'));
-        expect(saida, contains('=== APLICAÇÃO 1 REGISTRADA ==='));
-        expect(saida, contains('Volume de calda: 66,00 L'));
-        expect((await repos.aplicacoes.listarTodos()).length, 1);
-        expect(sessao.respostasRestantes, 0);
-      },
-    );
-
-    test('capacidade excedida: sem nova tentativa, nada é gravado', () async {
+    test('calda acima da capacidade vira mais viagens, sem erro', () async {
       final repos = await _comExemplo();
       final sessao = await _rodar([
         ..._registrarDemonstracao(taxa: '20'),
-        'n', // não tentar de novo
         '0',
       ], repositorios: repos);
+      final saida = sessao.saida;
+      expect(saida, isNot(contains('Capacidade excedida')));
+      expect(saida, isNot(contains('Tentar de novo')));
+      expect(saida, contains('=== APLICAÇÃO 1 REGISTRADA ==='));
+      expect(saida, contains('Volume de calda: 132,00 L'));
       expect(
-        sessao.saida,
-        contains('Capacidade excedida: 132 L (máximo 70 L)'),
+        saida,
+        contains('Viagens da calda: 2 viagens (até 70 L por viagem)'),
       );
-      expect(sessao.saida, isNot(contains('REGISTRADA')));
-      expect(await repos.aplicacoes.listarTodos(), isEmpty);
+      expect(
+        saida,
+        contains('Viagens dos sólidos: 1 viagem (até 70 kg por viagem)'),
+      );
+      expect((await repos.aplicacoes.listarTodos()).length, 1);
+      expect(sessao.respostasRestantes, 0);
     });
+
+    test(
+      'a conferência já mostra a carga e as viagens antes de gravar',
+      () async {
+        final repos = await _comExemplo();
+        final sessao = await _rodar([
+          ..._registrarDemonstracao(taxa: '20', confirmar: 'n'),
+          '0',
+        ], repositorios: repos);
+        final saida = sessao.saida;
+        final conferencia = saida.indexOf('=== CONFERIR ANTES DE GRAVAR ===');
+        final viagens = saida.indexOf(
+          'Viagens da calda: 2 viagens (até 70 L por viagem)',
+        );
+        final pergunta = saida.indexOf('Gravar esta aplicação?');
+        expect(conferencia, greaterThan(-1));
+        expect(viagens, greaterThan(conferencia));
+        expect(pergunta, greaterThan(viagens));
+        expect(saida, contains('Cancelado. Nada foi gravado.'));
+        expect(await repos.aplicacoes.listarTodos(), isEmpty);
+      },
+    );
+
+    test('76 kg de sólido num drone de 70 kg são 2 viagens', () async {
+      final repos = await _comExemplo();
+      final sessao = await _rodar([
+        '2', '1', '1', '2', '', '10', // só o Chico2, 3,8 ha
+        '2', '5', '20', '', 'n', // Boro Super: 20 kg/ha
+        '', '', // sem chuva, sem observação
+        '', // confirma
+        '0',
+      ], repositorios: repos);
+      final saida = sessao.saida;
+      expect(saida, contains('Massa de produtos sólidos: 76,00 kg'));
+      expect(
+        saida,
+        contains('Viagens dos sólidos: 2 viagens (até 70 kg por viagem)'),
+      );
+      expect(saida, isNot(contains('Viagens da calda')));
+      expect(saida, isNot(contains('Capacidade excedida')));
+      expect((await repos.aplicacoes.listarTodos()).length, 1);
+      expect(sessao.respostasRestantes, 0);
+    });
+
+    test(
+      'aplicador sem capacidade: avisa que as viagens não existem',
+      () async {
+        final repos = await _comExemplo();
+        final trator = criarAplicador('trator', id: null);
+        await repos.aplicadores.salvar(trator);
+        final sessao = await _rodar([
+          '2', '1', '2', '1', '', '10', // aplicador 2: o trator
+          '1', '1', '300', '', 'n',
+          '', '', '',
+          '0',
+        ], repositorios: repos);
+        final saida = sessao.saida;
+        expect(saida, contains('Volume de calda: 28,00 L'));
+        expect(
+          saida,
+          contains(
+            'Viagens da calda: não calculadas (aplicador sem capacidade em L)',
+          ),
+        );
+      },
+    );
 
     test('responder não na conferência não grava nada', () async {
       final repos = await _comExemplo();
@@ -614,6 +651,8 @@ void main() {
     test('cria os cadastros e pode ser repetido sem duplicar', () async {
       final sessao = await _rodar(['7', '7', '0']);
       expect(sessao.saida, contains('Dados de exemplo prontos'));
+      expect(sessao.saida, contains('Talhão: Sede / Chico1 - 2,80 ha'));
+      expect(sessao.saida, contains('Talhão: Sede / Chico2 - 3,80 ha'));
       expect(sessao.saida, contains('Drone DJI: até 70 L / 70 kg por voo'));
       final repos = sessao.repositorios;
       expect((await repos.areas.listarTodos()).length, 1);

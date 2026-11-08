@@ -13,6 +13,7 @@ void main() {
   late TalhaoService servico;
   late int idSede;
   late int idFundos;
+  var recusaDado = throwsA(isA<DadoInvalidoException>());
 
   Future<Talhao> cadastrar(String nome, {int? area, double hectares = 2}) {
     return servico.cadastrar(
@@ -140,6 +141,109 @@ void main() {
     test('talhao que nao existe lanca RegistroNaoEncontrado', () async {
       var mensagem = await mensagemDoErroAsync(() {
         return servico.corrigirHectares(99, 2);
+      });
+
+      expect(mensagem, 'Registro não encontrado: talhão 99');
+    });
+  });
+
+  group('corrigir', () {
+    test('troca so o nome e mantem os hectares', () async {
+      var talhao = await cadastrar('Chico1', hectares: 2.8);
+
+      var corrigido = await servico.corrigir(talhao.id!, nome: 'Chico 1');
+
+      expect(corrigido.nome, 'Chico 1');
+      expect(corrigido.hectares, 2.8);
+      expect((await talhoes.buscarPorId(talhao.id!))?.nome, 'Chico 1');
+    });
+
+    test('troca nome e hectares juntos', () async {
+      var talhao = await cadastrar('Chico1', hectares: 2.8);
+
+      var corrigido = await servico.corrigir(
+        talhao.id!,
+        nome: 'Chico1A',
+        hectares: 3.1,
+      );
+
+      expect(corrigido.nome, 'Chico1A');
+      expect(corrigido.hectares, 3.1);
+    });
+
+    test('a area do talhao nao muda', () async {
+      var talhao = await cadastrar('Chico1');
+
+      var corrigido = await servico.corrigir(talhao.id!, nome: 'Outro');
+
+      expect(corrigido.area.nome, 'Sede');
+    });
+
+    test('mudar so as maiusculas do proprio nome e aceito', () async {
+      var talhao = await cadastrar('Chico1');
+
+      var corrigido = await servico.corrigir(talhao.id!, nome: 'CHICO1');
+
+      expect(corrigido.nome, 'CHICO1');
+    });
+
+    test('nome de outro talhao da mesma area e recusado', () async {
+      await cadastrar('Chico1');
+      var chico2 = await cadastrar('Chico2');
+
+      var mensagem = await mensagemDoErroAsync(() {
+        return servico.corrigir(chico2.id!, nome: 'chico1');
+      });
+
+      expect(mensagem, 'Talhão inválido: chico1 (já existe nesta área)');
+      expect(chico2.nome, 'Chico2');
+    });
+
+    test('nome igual ao de um talhao de outra area e aceito', () async {
+      await cadastrar('Chico1', area: idFundos);
+      var chico1 = await cadastrar('Chico1');
+
+      var corrigido = await servico.corrigir(chico1.id!, nome: 'Chico1');
+
+      expect(corrigido.nome, 'Chico1');
+    });
+
+    test('hectares invalidos mantem tambem o nome antigo', () async {
+      var talhao = await cadastrar('Chico1', hectares: 2.8);
+
+      await expectLater(
+        servico.corrigir(talhao.id!, nome: 'Novo', hectares: 0),
+        throwsA(isA<TalhaoInvalidoException>()),
+      );
+
+      expect(talhao.nome, 'Chico1');
+      expect(talhao.hectares, 2.8);
+    });
+
+    test('nome vazio lanca DadoInvalidoException e nada muda', () async {
+      var talhao = await cadastrar('Chico1', hectares: 2.8);
+
+      await expectLater(
+        servico.corrigir(talhao.id!, nome: '  ', hectares: 4),
+        recusaDado,
+      );
+
+      expect(talhao.nome, 'Chico1');
+      expect(talhao.hectares, 2.8);
+    });
+
+    test('sem nada novo, o talhao fica igual', () async {
+      var talhao = await cadastrar('Chico1', hectares: 2.8);
+
+      var corrigido = await servico.corrigir(talhao.id!);
+
+      expect(corrigido.nome, 'Chico1');
+      expect(corrigido.hectares, 2.8);
+    });
+
+    test('talhao que nao existe lanca RegistroNaoEncontrado', () async {
+      var mensagem = await mensagemDoErroAsync(() {
+        return servico.corrigir(99, nome: 'X');
       });
 
       expect(mensagem, 'Registro não encontrado: talhão 99');

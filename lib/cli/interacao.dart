@@ -72,20 +72,121 @@ class Interacao {
       if (resposta.isEmpty) {
         return null;
       }
-      final valor = lerNumero(resposta);
-      if (valor == null) {
-        linha('  Número inválido. Use só dígitos, com vírgula ou ponto (2,8).');
-        continue;
+      final valor = _conferirNumero(resposta, minimo, exclusivo);
+      if (valor != null) {
+        return valor;
       }
-      if (minimo != null) {
-        final valido = exclusivo ? valor > minimo : valor >= minimo;
-        if (!valido) {
-          final regra = exclusivo ? 'maior que' : 'pelo menos';
-          linha('  O valor precisa ser $regra ${formatarCompacto(minimo)}.');
-          continue;
-        }
+    }
+  }
+
+  /// Converte a [resposta] em número e confere o [minimo]. Se não servir,
+  /// avisa o que está errado e devolve null (quem chamou pergunta de novo).
+  double? _conferirNumero(String resposta, double? minimo, bool exclusivo) {
+    final valor = lerNumero(resposta);
+    if (valor == null) {
+      linha('  Número inválido. Use só dígitos, com vírgula ou ponto (2,8).');
+      return null;
+    }
+    if (minimo != null) {
+      final valido = exclusivo ? valor > minimo : valor >= minimo;
+      if (!valido) {
+        final regra = exclusivo ? 'maior que' : 'pelo menos';
+        linha('  O valor precisa ser $regra ${formatarCompacto(minimo)}.');
+        return null;
       }
-      return valor;
+    }
+    return valor;
+  }
+
+  // ---------------------------------------------------------------------
+  // Corrigir um valor que já existe: Enter mantém o valor atual
+  // ---------------------------------------------------------------------
+
+  /// Pergunta o novo valor de um texto obrigatório. Enter mantém o [atual].
+  String editarTexto(String rotulo, String atual) {
+    final resposta = perguntar('$rotulo [atual: $atual; Enter = manter]');
+    return resposta.isEmpty ? atual : resposta;
+  }
+
+  /// Pergunta o novo valor de um texto opcional. Enter mantém o [atual] e
+  /// um traço (`-`) apaga o texto, devolvendo null.
+  String? editarTextoOpcional(String rotulo, String? atual) {
+    final mostrado = atual ?? 'vazio';
+    final resposta = perguntar(
+      '$rotulo [atual: $mostrado; Enter = manter; - = apagar]',
+    );
+    if (resposta.isEmpty) {
+      return atual;
+    }
+    return resposta == '-' ? null : resposta;
+  }
+
+  /// Pergunta o novo valor de um número. Enter mantém o [atual]. Repete a
+  /// pergunta se a resposta não for número ou não respeitar o [minimo].
+  double editarNumero(
+    String rotulo,
+    double atual, {
+    double? minimo,
+    bool exclusivo = false,
+  }) {
+    while (true) {
+      final resposta = perguntar(
+        '$rotulo [atual: ${formatarCompacto(atual)}; Enter = manter]',
+      );
+      if (resposta.isEmpty) {
+        return atual;
+      }
+      final valor = _conferirNumero(resposta, minimo, exclusivo);
+      if (valor != null) {
+        return valor;
+      }
+    }
+  }
+
+  /// Pergunta o novo valor de um número opcional, que pode estar vazio.
+  /// Enter mantém o [atual] e um traço (`-`) apaga o valor, devolvendo null.
+  /// Repete a pergunta se a resposta não servir.
+  double? editarNumeroOpcional(
+    String rotulo,
+    double? atual, {
+    double? minimo,
+    bool exclusivo = false,
+  }) {
+    final mostrado = atual == null ? 'vazio' : formatarCompacto(atual);
+    while (true) {
+      final resposta = perguntar(
+        '$rotulo [atual: $mostrado; Enter = manter; - = apagar]',
+      );
+      if (resposta.isEmpty) {
+        return atual;
+      }
+      if (resposta == '-') {
+        return null;
+      }
+      final valor = _conferirNumero(resposta, minimo, exclusivo);
+      if (valor != null) {
+        return valor;
+      }
+    }
+  }
+
+  /// Pergunta a nova data (dia/mês/ano). Enter mantém a [atual]. Repete a
+  /// pergunta se a data não existir.
+  DateTime editarData(String rotulo, DateTime atual) {
+    while (true) {
+      final resposta = perguntar(
+        '$rotulo [atual: ${formatarData(atual)}; Enter = manter]',
+      );
+      if (resposta.isEmpty) {
+        return atual;
+      }
+      final data = lerData(resposta);
+      if (data != null) {
+        return data;
+      }
+      linha(
+        '  Data inválida. Use dia/mês/ano, por exemplo ${formatarData(atual)}.',
+      );
     }
   }
 
@@ -249,8 +350,8 @@ class Interacao {
   ///
   /// Trata os quatro grupos de erro que existem no projeto:
   /// - [PersistenciaException]: falha ao falar com o banco;
-  /// - [AgroGestorException]: regra do domínio (dado inválido, capacidade
-  ///   excedida, registro que não existe...);
+  /// - [AgroGestorException]: regra do domínio (dado inválido, registro que
+  ///   não existe...);
   /// - [CaldaException] e [DesperdicioException]: as funções de cálculo da
   ///   lógica de programação, que têm exceções próprias;
   /// - qualquer outra [Exception], para o menu nunca fechar por um imprevisto.

@@ -7,10 +7,12 @@ import 'package:caderno_fazenda/models/validacoes.dart';
 /// Cada subclasse define o próprio [tipo] (igual ao valor gravado no banco) e
 /// implementa [descreverCapacidade] e [origemDoRegistro] do seu jeito.
 ///
-/// A capacidade é um limite máximo, não um volume fixo: o tanque nem sempre é
-/// cheio. A regra "volume acima da capacidade" fica na frente de Lógica
-/// (`avaliarCapacidade`) e é aplicada pelo serviço; aqui o aplicador só expõe a
-/// sua capacidade máxima e garante que, quando informada, ela é maior que zero.
+/// A capacidade é um limite máximo POR VIAGEM, não um volume fixo: o tanque
+/// nem sempre é cheio, e uma aplicação maior que ele é feita em mais de uma
+/// viagem. O cálculo das viagens fica na frente de Lógica
+/// (`viagensNecessarias`) e é aplicado pelo serviço; aqui o aplicador só expõe
+/// a sua capacidade máxima e garante que, quando informada, ela é maior que
+/// zero.
 /// A capacidade pode ficar nula: a do trator ainda não foi levantada.
 abstract class Aplicador extends Entidade {
   String? _modelo;
