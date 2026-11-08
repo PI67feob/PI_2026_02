@@ -8,8 +8,10 @@
 /// Regras:
 /// 1. Chuva ([avaliarChuva]): se chover em menos de 3 horas depois da
 ///    aplicação, reaplica. O limite de 3 horas é parâmetro.
-/// 2. Capacidade ([avaliarCapacidade]): a calda não pode passar da capacidade
-///    máxima do aplicador.
+/// 2. Capacidade ([avaliarCapacidade]): a capacidade máxima do aplicador vale
+///    por viagem. Passar dela não é erro: a aplicação só precisa de mais de
+///    uma viagem (quantas, quem diz é `viagensNecessarias`, em
+///    `calculos_calda.dart`).
 /// 3. Sobredose ([avaliarSobredose]): aplicar mais que o previsto é sobredose.
 ///    A tolerância, em %, é parâmetro: quem define o valor aceitável é o
 ///    agrônomo, por isso ele não está escrito fixo aqui.
@@ -50,10 +52,10 @@ enum DecisaoChuva {
 
 /// Resultado da regra da capacidade.
 enum ResultadoCapacidade {
-  /// O volume cabe no aplicador, inclusive quando é igual à capacidade.
+  /// O volume cabe numa viagem só, inclusive quando é igual à capacidade.
   dentroDaCapacidade,
 
-  /// O volume passou da capacidade máxima do aplicador.
+  /// O volume passou da capacidade de uma viagem: precisa de mais de uma.
   excedeu,
 
   /// Volume negativo, ou capacidade zero, negativa ou NaN.
@@ -112,21 +114,24 @@ DecisaoChuva avaliarChuva(
   return DecisaoChuva.naoReaplicar;
 }
 
-/// Regra da capacidade: diz se a calda passou da capacidade do aplicador.
+/// Regra da capacidade: diz se a calda cabe numa viagem só do aplicador.
 ///
 /// Entrada:
 /// - [volume]: volume de calda (ou massa de produto), na mesma unidade da
 ///   capacidade.
-/// - [capacidade]: capacidade máxima do aplicador. Deve ser maior que zero.
+/// - [capacidade]: capacidade máxima do aplicador em UMA viagem. Deve ser
+///   maior que zero.
 ///
 /// Saída:
-/// - [ResultadoCapacidade.excedeu] se [volume] for maior que [capacidade].
+/// - [ResultadoCapacidade.excedeu] se [volume] for maior que [capacidade]:
+///   não é erro, só precisa de mais de uma viagem.
 /// - [ResultadoCapacidade.dentroDaCapacidade] se for menor ou igual: volume
-///   igual à capacidade ainda cabe.
+///   igual à capacidade ainda cabe numa viagem.
 /// - [ResultadoCapacidade.entradaInvalida] se o volume for negativo ou a
 ///   capacidade não for maior que zero. Não lança exceção.
 ///
-/// Quem lança `CapacidadeExcedidaException` é o serviço.
+/// Para saber QUANTAS viagens são necessárias, use `viagensNecessarias`
+/// (`calculos_calda.dart`).
 ResultadoCapacidade avaliarCapacidade(double volume, double capacidade) {
   if (!volume.isFinite || volume < 0) {
     return ResultadoCapacidade.entradaInvalida;
@@ -180,7 +185,12 @@ StatusSobredose avaliarSobredose(
   if (doseRealizada <= dosePrevista) {
     return StatusSobredose.ok;
   }
-  final excesso = percentualDesperdicio(dosePrevista, doseRealizada);
+  // O excesso sai de uma divisão em ponto flutuante: 0,33 contra 0,3 dá
+  // 10,000000000000009 e não 10. Arredonda para esse ruído não empurrar para
+  // "crítico" uma dose que está exatamente na tolerância.
+  final excesso = double.parse(
+    percentualDesperdicio(dosePrevista, doseRealizada).toStringAsFixed(9),
+  );
   if (excesso <= toleranciaPercentual) {
     return StatusSobredose.atencao;
   }

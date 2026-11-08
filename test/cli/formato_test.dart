@@ -1,5 +1,13 @@
 import 'package:caderno_fazenda/cli/formato.dart';
 import 'package:caderno_fazenda/logica/alertas_operacionais.dart';
+import 'package:caderno_fazenda/models/aplicacao.dart';
+import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
+import 'package:caderno_fazenda/models/area.dart';
+import 'package:caderno_fazenda/models/drone.dart';
+import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/operacao.dart';
+import 'package:caderno_fazenda/models/talhao.dart';
+import 'package:caderno_fazenda/models/unidade_dose.dart';
 import 'package:test/test.dart';
 
 /// Testes das funções que transformam números, datas e decisões em texto.
@@ -85,15 +93,99 @@ void main() {
     test('um texto para cada resultado', () {
       expect(
         descreverResultadoCapacidade(ResultadoCapacidade.dentroDaCapacidade),
-        'cabe no aplicador',
+        'cabe numa viagem só',
       );
       expect(
         descreverResultadoCapacidade(ResultadoCapacidade.excedeu),
-        'EXCEDEU a capacidade do aplicador',
+        'não cabe numa viagem só (precisa de mais de uma)',
       );
       expect(
         descreverResultadoCapacidade(ResultadoCapacidade.entradaInvalida),
         contains('inválidos'),
+      );
+    });
+  });
+
+  group('descreverViagens', () {
+    test('uma viagem fica no singular', () {
+      expect(descreverViagens(1, 70, 'L'), '1 viagem (até 70 L por viagem)');
+    });
+
+    test('mais de uma viagem fica no plural', () {
+      expect(descreverViagens(2, 70, 'kg'), '2 viagens (até 70 kg por viagem)');
+      expect(descreverViagens(7, 20, 'L'), '7 viagens (até 20 L por viagem)');
+    });
+
+    test('capacidade com casas decimais aparece sem zeros sobrando', () {
+      expect(descreverViagens(3, 2.5, 'L'), '3 viagens (até 2,5 L por viagem)');
+    });
+
+    test('sem viagens calculadas, avisa que falta a capacidade', () {
+      expect(
+        descreverViagens(null, null, 'L'),
+        'não calculadas (aplicador sem capacidade em L)',
+      );
+      expect(
+        descreverViagens(null, null, 'kg'),
+        'não calculadas (aplicador sem capacidade em kg)',
+      );
+    });
+  });
+  group('plural', () {
+    test('um fica no singular; zero e vários, no plural', () {
+      expect(plural(1, 'talhão', 'talhões'), 'talhão');
+      expect(plural(0, 'talhão', 'talhões'), 'talhões');
+      expect(plural(2, 'talhão', 'talhões'), 'talhões');
+    });
+  });
+
+  group('descrição de registros em uma linha', () {
+    test('insumo sem marca', () {
+      final insumo = Insumo(nome: 'Orkestra SC', tipo: 'Fungicida');
+      expect(descreverInsumo(insumo), 'Orkestra SC (Fungicida)');
+    });
+
+    test('insumo com marca', () {
+      final insumo = Insumo(
+        nome: 'Orkestra SC',
+        tipo: 'Fungicida',
+        marca: 'BASF',
+      );
+      expect(descreverInsumo(insumo), 'Orkestra SC (Fungicida, BASF)');
+    });
+
+    test('talhão com a área e os hectares', () {
+      final talhao = Talhao(
+        nome: 'Chico1',
+        hectares: 2.8,
+        area: Area(nome: 'Sede', id: 1),
+      );
+      expect(descreverTalhao(talhao), 'Sede / Chico1 - 2,80 ha');
+    });
+
+    test('aplicação com data, operação, aplicador, talhões e insumos', () {
+      final sede = Area(nome: 'Sede', id: 1);
+      final insumo = Insumo(nome: 'Orkestra SC', tipo: 'Fungicida', id: 1);
+      final aplicacao = Aplicacao(
+        data: DateTime(2026, 11, 6),
+        operacao: Operacao(descricao: 'Pulverização', id: 1),
+        aplicador: Drone(modelo: 'DJI', capacidadeMaximaL: 70, id: 1),
+        talhoes: [
+          Talhao(nome: 'Chico1', hectares: 2.8, area: sede, id: 1),
+          Talhao(nome: 'Chico2', hectares: 3.8, area: sede, id: 2),
+        ],
+        insumos: [
+          AplicacaoInsumo(
+            insumo: insumo,
+            unidade: UnidadeDose.litrosPorHectare,
+            dosePrevista: 0.3,
+          ),
+        ],
+      );
+      expect(
+        descreverAplicacao(aplicacao),
+        '06/11/2026 | Pulverização | drone | Chico1, Chico2 (6,60 ha) | '
+        '1 insumo',
       );
     });
   });

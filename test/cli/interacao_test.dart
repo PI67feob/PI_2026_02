@@ -126,6 +126,147 @@ void main() {
     });
   });
 
+  group('editarTexto', () {
+    test('Enter mantém o valor atual e mostra qual é', () {
+      final ui = conversar(['']);
+      expect(ui.editarTexto('Nome da área', 'Sede'), 'Sede');
+      expect(
+        terminal.saida,
+        contains('Nome da área [atual: Sede; Enter = manter]: '),
+      );
+    });
+
+    test('um texto novo troca o valor, sem espaços nas pontas', () {
+      final ui = conversar(['  Norte  ']);
+      expect(ui.editarTexto('Nome', 'Sede'), 'Norte');
+    });
+  });
+
+  group('editarTextoOpcional', () {
+    test('Enter mantém o valor atual', () {
+      final ui = conversar(['']);
+      expect(ui.editarTextoOpcional('Marca', 'BASF'), 'BASF');
+      expect(
+        terminal.saida,
+        contains('Marca [atual: BASF; Enter = manter; - = apagar]: '),
+      );
+    });
+
+    test('Enter num campo vazio continua vazio e diz "vazio"', () {
+      final ui = conversar(['']);
+      expect(ui.editarTextoOpcional('Marca', null), isNull);
+      expect(terminal.saida, contains('[atual: vazio;'));
+    });
+
+    test('um traço apaga o valor', () {
+      final ui = conversar(['-']);
+      expect(ui.editarTextoOpcional('Marca', 'BASF'), isNull);
+    });
+
+    test('um texto novo troca o valor', () {
+      final ui = conversar(['Bayer']);
+      expect(ui.editarTextoOpcional('Marca', 'BASF'), 'Bayer');
+    });
+  });
+
+  group('editarNumero', () {
+    test('Enter mantém o valor atual, escrito sem zeros sobrando', () {
+      final ui = conversar(['']);
+      expect(ui.editarNumero('Hectares', 2.8), 2.8);
+      expect(
+        terminal.saida,
+        contains('Hectares [atual: 2,8; Enter = manter]: '),
+      );
+    });
+
+    test('um número novo troca o valor (vírgula ou ponto)', () {
+      expect(conversar(['3,1']).editarNumero('x', 2.8), 3.1);
+      expect(conversar(['3.1']).editarNumero('x', 2.8), 3.1);
+    });
+
+    test('repete a pergunta se não for número', () {
+      final ui = conversar(['muito', '3,1']);
+      expect(ui.editarNumero('x', 2.8), 3.1);
+      expect(terminal.saida, contains('Número inválido.'));
+    });
+
+    test('repete a pergunta se não respeitar o mínimo', () {
+      final ui = conversar(['0', '-2', '3,1']);
+      expect(ui.editarNumero('x', 2.8, minimo: 0, exclusivo: true), 3.1);
+      expect(terminal.saida, contains('O valor precisa ser maior que 0.'));
+    });
+
+    test('o valor atual não é conferido contra o mínimo', () {
+      final ui = conversar(['']);
+      expect(ui.editarNumero('x', 0, minimo: 0, exclusivo: true), 0);
+    });
+  });
+
+  group('editarNumeroOpcional', () {
+    test('Enter mantém o valor atual', () {
+      final ui = conversar(['']);
+      expect(ui.editarNumeroOpcional('Capacidade', 70), 70);
+      expect(
+        terminal.saida,
+        contains('Capacidade [atual: 70; Enter = manter; - = apagar]: '),
+      );
+    });
+
+    test('Enter num campo vazio continua vazio e diz "vazio"', () {
+      final ui = conversar(['']);
+      expect(ui.editarNumeroOpcional('Capacidade', null), isNull);
+      expect(terminal.saida, contains('[atual: vazio;'));
+    });
+
+    test('um traço apaga o valor', () {
+      final ui = conversar(['-']);
+      expect(ui.editarNumeroOpcional('Capacidade', 70), isNull);
+    });
+
+    test('um número novo preenche ou troca o valor', () {
+      expect(conversar(['80']).editarNumeroOpcional('x', 70), 80);
+      expect(conversar(['2,5']).editarNumeroOpcional('x', null), 2.5);
+    });
+
+    test('repete a pergunta se a resposta não servir', () {
+      final ui = conversar(['abc', '0', '80']);
+      expect(ui.editarNumeroOpcional('x', 70, minimo: 0, exclusivo: true), 80);
+      expect(terminal.saida, contains('Número inválido.'));
+      expect(terminal.saida, contains('O valor precisa ser maior que 0.'));
+    });
+  });
+
+  group('editarData', () {
+    test('Enter mantém a data atual e mostra qual é', () {
+      final ui = conversar(['']);
+      expect(
+        ui.editarData('Data', DateTime(2026, 11, 7)),
+        DateTime(2026, 11, 7),
+      );
+      expect(
+        terminal.saida,
+        contains('Data [atual: 07/11/2026; Enter = manter]: '),
+      );
+    });
+
+    test('lê a data nova', () {
+      final ui = conversar(['15/11/2026']);
+      expect(
+        ui.editarData('Data', DateTime(2026, 11, 7)),
+        DateTime(2026, 11, 15),
+      );
+    });
+
+    test('repete a pergunta se a data não existir', () {
+      final ui = conversar(['31/02/2026', 'ontem', '15/11/2026']);
+      expect(
+        ui.editarData('Data', DateTime(2026, 11, 7)),
+        DateTime(2026, 11, 15),
+      );
+      expect(terminal.saida, contains('Data inválida.'));
+    });
+  });
+
   group('escolherPorId', () {
     final sede = Area(nome: 'Sede', id: 1);
     final norte = Area(nome: 'Norte', id: 2);

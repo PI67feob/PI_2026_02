@@ -1,4 +1,3 @@
-import 'package:caderno_fazenda/exceptions/capacidade_excedida_exception.dart';
 import 'package:caderno_fazenda/exceptions/dado_invalido_exception.dart';
 import 'package:caderno_fazenda/exceptions/dose_invalida_exception.dart';
 import 'package:caderno_fazenda/logica/alertas_operacionais.dart';
@@ -9,6 +8,7 @@ import 'package:caderno_fazenda/logica/totais_desperdicio.dart';
 import 'package:caderno_fazenda/models/aplicacao.dart';
 import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/unidade_dose.dart';
 import 'package:caderno_fazenda/repositories/interfaces/aplicacao_repository.dart';
@@ -20,11 +20,6 @@ import 'package:caderno_fazenda/repositories/interfaces/talhao_repository.dart';
 import 'package:caderno_fazenda/services/dose_informada.dart';
 import 'package:caderno_fazenda/services/parametros_operacionais.dart';
 import 'package:caderno_fazenda/services/resultado_aplicacao.dart';
-
-/// Mostra 70 em vez de 70.0 quando o número não tem casas decimais.
-num _limpo(double valor) {
-  return valor == valor.truncateToDouble() ? valor.toInt() : valor;
-}
 
 /// Caso de uso principal do sistema: registrar uma aplicação.
 ///
@@ -64,22 +59,24 @@ class AplicacaoService {
   /// 3. Normaliza cada dose para L/ha (líquido) ou kg/ha (sólido).
   /// 4. Monta a aplicação, que garante as próprias regras.
   /// 5. Calcula o volume de calda (área x taxa) e a massa de produtos sólidos.
-  /// 6. Aplica a regra da capacidade do aplicador.
+  /// 6. Calcula quantas viagens o aplicador faz para levar a calda e os
+  ///    sólidos.
   /// 7. Aplica a regra da chuva, se [horasAteChuva] foi informada.
   /// 8. Calcula, por insumo, a quantidade prevista, a quantidade a comprar, o
   ///    desperdício e o status de sobredose.
   /// 9. Grava a aplicação.
   ///
-  /// Cada aplicação representa uma carga: o volume de calda dela tem de caber
-  /// no aplicador. A capacidade do aplicador só é conferida quando foi
-  /// cadastrada (a do trator ainda não foi levantada). PENDENTE de confirmação
-  /// com a fazenda: como lançar uma aplicação que precisa de mais de uma carga.
+  /// A capacidade do aplicador vale POR VIAGEM (voo do drone, enchida da bomba
+  /// costal, carga do trator). Uma aplicação maior que a capacidade não é
+  /// erro: ela é registrada inteira, como um lançamento só, e o resultado diz
+  /// quantas viagens são necessárias. As viagens só são calculadas quando o
+  /// aplicador tem a capacidade cadastrada (a do trator ainda não foi
+  /// levantada); sem ela ficam nulas.
   ///
   /// Lança `RegistroNaoEncontradoException` para id que não existe,
   /// `DadoInvalidoException` para dado inválido (taxa, unidade, lista vazia,
-  /// horas negativas...), [DoseInvalidaException] para dose inválida e
-  /// [CapacidadeExcedidaException] quando a calda (ou a massa) passa da
-  /// capacidade do aplicador. Nada é gravado se alguma delas for lançada.
+  /// horas negativas...) e [DoseInvalidaException] para dose inválida. Nada é
+  /// gravado se alguma delas for lançada.
   Future<ResultadoAplicacao> registrar({
     required DateTime data,
     required int operacaoId,
@@ -94,15 +91,8 @@ class AplicacaoService {
 
     final operacao = await _operacoes.exigirPorId(operacaoId, 'operação');
     final aplicador = await _aplicadores.exigirPorId(aplicadorId, 'aplicador');
-    final talhoes = <Talhao>[];
-    for (final id in talhaoIds) {
-      talhoes.add(await _talhoes.exigirPorId(id, 'talhão'));
-    }
-    final itens = <AplicacaoInsumo>[];
-    for (final dose in doses) {
-      final insumo = await _insumos.exigirPorId(dose.insumoId, 'insumo');
-      itens.add(_montarItem(insumo, dose, taxaLitrosPorHa));
-    }
+    final talhoes = await _buscarTalhoes(talhaoIds);
+    final itens = await _montarItens(doses, taxaLitrosPorHa);
 
     final aplicacao = Aplicacao(
       data: data,
@@ -113,16 +103,7 @@ class AplicacaoService {
       observacao: observacao,
     );
 
-    final volume = _volumeDaCalda(aplicacao, taxaLitrosPorHa);
-    final massa = _massaDeSolidos(aplicacao);
-    final capacidadeL = aplicador.capacidadeMaximaL;
-    if (volume != null && capacidadeL != null) {
-      _exigirDentro(volume, capacidadeL, 'L');
-    }
-    final capacidadeKg = aplicador.capacidadeMaximaKg;
-    if (massa != null && capacidadeKg != null) {
-      _exigirDentro(massa, capacidadeKg, 'kg');
-    }
+    final carga = _carga(aplicacao, taxaLitrosPorHa);
 
     DecisaoChuva? chuva;
     if (horasAteChuva != null) {
@@ -138,10 +119,48 @@ class AplicacaoService {
     return ResultadoAplicacao(
       aplicacao: aplicacao,
       insumos: avaliacoes,
-      volumeCaldaL: volume,
-      massaProdutosKg: massa,
+      volumeCaldaL: carga.volumeCaldaL,
+      massaProdutosKg: carga.massaProdutosKg,
+      viagensCalda: carga.viagensCalda,
+      viagensSolidos: carga.viagensSolidos,
       chuva: chuva,
     );
+  }
+
+  /// Calcula, sem gravar nada, o que a aplicação leva de calda e de sólidos e
+  /// quantas viagens o aplicador faz.
+  ///
+  /// Serve para conferir antes de [registrar]. Como a capacidade do aplicador
+  /// vale por viagem, uma taxa digitada errada não é mais barrada por um erro
+  /// de capacidade: ela aparece aqui como um volume (ou um número de viagens)
+  /// fora do esperado, e dá tempo de corrigir.
+  ///
+  /// Usa os mesmos dados e as mesmas regras de [registrar] que mexem na
+  /// carga, então os números são os mesmos que ele vai devolver. Lança
+  /// `RegistroNaoEncontradoException` para id que não existe,
+  /// `DadoInvalidoException` para dado inválido (taxa, unidade, lista vazia,
+  /// talhão ou insumo repetido) e [DoseInvalidaException] para dose inválida.
+  Future<CargaAplicacao> calcularCarga({
+    required int aplicadorId,
+    required List<int> talhaoIds,
+    required List<DoseInformada> doses,
+    required double taxaLitrosPorHa,
+  }) async {
+    _exigirTaxa(taxaLitrosPorHa);
+    final aplicador = await _aplicadores.exigirPorId(aplicadorId, 'aplicador');
+    final talhoes = await _buscarTalhoes(talhaoIds);
+    final itens = await _montarItens(doses, taxaLitrosPorHa);
+
+    // A aplicação provisória só existe para reaproveitar as regras do modelo
+    // (ao menos um talhão e um insumo, sem repetidos). Nada dela é gravado.
+    final provisoria = Aplicacao(
+      data: DateTime(2000),
+      operacao: Operacao(descricao: 'Prévia da carga'),
+      aplicador: aplicador,
+      talhoes: talhoes,
+      insumos: itens,
+    );
+    return _carga(provisoria, taxaLitrosPorHa);
   }
 
   /// Soma previsto, realizado e desperdício de todas as aplicações já
@@ -173,6 +192,26 @@ class AplicacaoService {
     if (!taxa.isFinite || taxa <= 0) {
       throw DadoInvalidoException('taxa (L/ha)', 'deve ser maior que zero');
     }
+  }
+
+  Future<List<Talhao>> _buscarTalhoes(List<int> ids) async {
+    final talhoes = <Talhao>[];
+    for (final id in ids) {
+      talhoes.add(await _talhoes.exigirPorId(id, 'talhão'));
+    }
+    return talhoes;
+  }
+
+  Future<List<AplicacaoInsumo>> _montarItens(
+    List<DoseInformada> doses,
+    double taxa,
+  ) async {
+    final itens = <AplicacaoInsumo>[];
+    for (final dose in doses) {
+      final insumo = await _insumos.exigirPorId(dose.insumoId, 'insumo');
+      itens.add(_montarItem(insumo, dose, taxa));
+    }
+    return itens;
   }
 
   /// Passo 3: converte a dose da ficha para a base do banco.
@@ -232,19 +271,30 @@ class AplicacaoService {
     return temSolido ? massa : null;
   }
 
-  /// Passo 6: transforma o resultado da regra da capacidade em exceção.
-  void _exigirDentro(double quantidade, double capacidade, String unidade) {
-    switch (avaliarCapacidade(quantidade, capacidade)) {
-      case ResultadoCapacidade.dentroDaCapacidade:
-        return;
-      case ResultadoCapacidade.excedeu:
-        throw CapacidadeExcedidaException(
-          _limpo(quantidade),
-          _limpo(capacidade),
-          unidade,
-        );
-      case ResultadoCapacidade.entradaInvalida:
-        throw DadoInvalidoException('capacidade ($unidade)', 'valor inválido');
+  /// Passos 5 e 6: o que a aplicação leva e quantas viagens isso dá.
+  CargaAplicacao _carga(Aplicacao aplicacao, double taxaLitrosPorHa) {
+    final volume = _volumeDaCalda(aplicacao, taxaLitrosPorHa);
+    final massa = _massaDeSolidos(aplicacao);
+    final aplicador = aplicacao.aplicador;
+    return CargaAplicacao(
+      volumeCaldaL: volume,
+      massaProdutosKg: massa,
+      viagensCalda: _viagens(volume, aplicador.capacidadeMaximaL, 'L'),
+      viagensSolidos: _viagens(massa, aplicador.capacidadeMaximaKg, 'kg'),
+    );
+  }
+
+  /// Passo 6: quantas viagens o aplicador faz para levar a [quantidade]. É
+  /// nulo quando não há o que levar ou quando o aplicador não tem a
+  /// [capacidade] cadastrada, porque aí não dá para calcular.
+  int? _viagens(double? quantidade, double? capacidade, String unidade) {
+    if (quantidade == null || capacidade == null) {
+      return null;
+    }
+    try {
+      return viagensNecessarias(quantidade, capacidade);
+    } on CaldaException {
+      throw DadoInvalidoException('capacidade ($unidade)', 'valor inválido');
     }
   }
 

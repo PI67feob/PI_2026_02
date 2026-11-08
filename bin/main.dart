@@ -24,9 +24,9 @@ import 'package:caderno_fazenda/services/talhao_service.dart';
 ///
 /// O programa cadastra dados de exemplo da fazenda e registra uma aplicação,
 /// mostrando o que o sistema decide em cada passo: converte as doses, calcula o
-/// volume de calda, aplica as regras de chuva e de sobredose e totaliza o
-/// desperdício. No fim, provoca erros de propósito para mostrar o tratamento
-/// de exceções.
+/// volume de calda e as viagens do aplicador, aplica as regras de chuva e de
+/// sobredose e totaliza o desperdício. No fim, provoca erros de propósito para
+/// mostrar o tratamento de exceções.
 ///
 /// Os cadastros (área, talhões, aplicador, operação e insumos) só são criados
 /// se ainda não existirem, então dá para rodar `--mysql` várias vezes sem
@@ -136,12 +136,32 @@ Future<void> _demonstracao(Repositorios repositorios) async {
     print('    percentual: ${formatarNumero(totais.percentual, 1)}%');
   }
 
-  _titulo('4. Erros tratados (nada é gravado)');
+  // A capacidade do drone vale por voo: passar dela não é erro, só pede mais
+  // viagens. Aqui só se calcula a carga; nada é gravado.
+  _titulo('4. Aplicação com mais de uma viagem (só calcula, não grava)');
+  final carga = await aplicacaoService.calcularCarga(
+    aplicadorId: drone.id!,
+    talhaoIds: [chico1.id!, chico2.id!],
+    doses: [doseOrkestra, doseBoro],
+    taxaLitrosPorHa: 20,
+  );
+  final volumeGrande = carga.volumeCaldaL;
+  if (volumeGrande != null) {
+    print('  Taxa de 20 L/ha: calda de ${formatarNumero(volumeGrande)} L');
+    final viagens = descreverViagens(
+      carga.viagensCalda,
+      drone.capacidadeMaximaL,
+      'L',
+    );
+    print('  Viagens da calda: $viagens');
+  }
+
+  _titulo('5. Erros tratados (nada é gravado)');
   Future<void> talhaoRepetido() async {
     await talhaoService.cadastrar(areaId: idSede, nome: 'chico1', hectares: 1);
   }
 
-  await _tentar('taxa de 20 L/ha no drone', () => registrar(20));
+  await _tentar('taxa de aplicação zero', () => registrar(0));
   await _tentar('talhão com nome repetido', talhaoRepetido);
   if (aplicacoes is AplicacaoRepositoryMemoria) {
     aplicacoes.bancoIndisponivel = true;
@@ -175,10 +195,20 @@ void _mostrar(ResultadoAplicacao resultado) {
   final volume = resultado.volumeCaldaL;
   if (volume != null) {
     print('  Volume de calda: ${formatarNumero(volume)} L');
+    final capacidade = aplicador.capacidadeMaximaL;
+    final viagens = descreverViagens(resultado.viagensCalda, capacidade, 'L');
+    print('  Viagens da calda: $viagens');
   }
   final massa = resultado.massaProdutosKg;
   if (massa != null) {
     print('  Massa de produtos sólidos: ${formatarNumero(massa)} kg');
+    final capacidade = aplicador.capacidadeMaximaKg;
+    final viagens = descreverViagens(
+      resultado.viagensSolidos,
+      capacidade,
+      'kg',
+    );
+    print('  Viagens dos sólidos: $viagens');
   }
   print('  Chuva: ${descreverChuva(resultado.chuva)}');
 

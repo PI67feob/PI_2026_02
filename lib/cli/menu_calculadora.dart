@@ -38,7 +38,7 @@ class MenuCalculadora {
       ),
       OpcaoMenu('Converter unidades (mL, L, g, kg, ton)', _converter),
       OpcaoMenu('Chuva: precisa reaplicar?', _chuva),
-      OpcaoMenu('Capacidade: a calda cabe no aplicador?', _capacidade),
+      OpcaoMenu('Capacidade: quantas viagens o aplicador faz?', _capacidade),
       OpcaoMenu('Sobredose: passou do previsto?', _sobredose),
       OpcaoMenu('Desvio e percentual de desperdício', _desperdicio),
       OpcaoMenu('Quantidade a comprar (fator de compra)', _quantidadeAComprar),
@@ -184,10 +184,16 @@ class MenuCalculadora {
   }
 
   Future<void> _capacidade() async {
-    _ui.linha('\nFunção: avaliarCapacidade (alertas_operacionais.dart)');
+    _ui.linha(
+      '\nFunções: avaliarCapacidade (alertas_operacionais.dart) e '
+      'viagensNecessarias (calculos_calda.dart)',
+    );
+    _ui.linha(
+      '  A capacidade vale por viagem: passar dela só pede mais viagens.',
+    );
     final valores = _pedirNumeros([
       'Volume de calda (L)',
-      'Capacidade máxima do aplicador (L)',
+      'Capacidade máxima do aplicador por viagem (L)',
     ]);
     if (valores == null) {
       return;
@@ -195,6 +201,11 @@ class MenuCalculadora {
     final [volume, capacidade] = valores;
     final resultado = avaliarCapacidade(volume, capacidade);
     _ui.linha('Resultado: ${descreverResultadoCapacidade(resultado)}');
+    if (resultado != ResultadoCapacidade.entradaInvalida) {
+      final viagens = viagensNecessarias(volume, capacidade);
+      final texto = descreverViagens(viagens, capacidade, 'L');
+      _ui.linha('Viagens necessárias: $texto');
+    }
   }
 
   Future<void> _sobredose() async {

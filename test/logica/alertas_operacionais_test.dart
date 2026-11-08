@@ -1,4 +1,5 @@
 import 'package:caderno_fazenda/logica/alertas_operacionais.dart';
+import 'package:caderno_fazenda/logica/calculos_calda.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -137,6 +138,38 @@ void main() {
 
       expect(status, StatusSobredose.atencao);
     });
+
+    test(
+      'limite: excesso igual a tolerancia com casas decimais (0,3 e 0,33)',
+      () {
+        // 0,33 contra 0,3 dá 10,000000000000009% em ponto flutuante: o erro de
+        // arredondamento não pode virar "critico".
+        var status = avaliarSobredose(0.3, 0.33, toleranciaPercentual: 10);
+
+        expect(status, StatusSobredose.atencao);
+      },
+    );
+
+    test('limite: o mesmo vale para doses vindas de mL/ha', () {
+      var prevista = normalizarDose(300, 'mL/ha', 10);
+      var realizada = normalizarDose(330, 'mL/ha', 10);
+      var status = avaliarSobredose(
+        prevista,
+        realizada,
+        toleranciaPercentual: 10,
+      );
+
+      expect(status, StatusSobredose.atencao);
+    });
+
+    test(
+      'limite: um pouco acima da tolerancia com decimais ainda e critico',
+      () {
+        var status = avaliarSobredose(0.3, 0.3301, toleranciaPercentual: 10);
+
+        expect(status, StatusSobredose.critico);
+      },
+    );
 
     test('limite: excesso logo acima da tolerancia e critico', () {
       var status = avaliarSobredose(10, 11.01, toleranciaPercentual: 10);
