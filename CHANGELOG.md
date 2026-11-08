@@ -50,6 +50,17 @@
   `editarData` (Enter mantém o valor atual), e `plural`, `descreverInsumo`,
   `descreverTalhao` e `descreverAplicacao` em `formato.dart`.
 
+- Reaplicação por imprevisto: `Aplicacao` guarda as horas até a chuva (`horasAteChuva`) e o
+  motivo (`MotivoReaplicacao`: chuva, sol/calor, vento, outro). O registro pergunta a lista
+  de imprevistos; o detalhe da aplicação mostra os ALERTAS no topo; a lista marca
+  `REAPLICAR`; a consulta "Aplicações a reaplicar (imprevistos)" lista e conta por
+  imprevisto. Corrigir uma aplicação (opção 8) também muda a chuva e o motivo.
+  `AplicacaoService.decisaoDeChuva` e `avisosDeReaplicacao` (`formato.dart`),
+  `Interacao.editarOpcaoOpcional`.
+- Banco: `aplicacao` ganha as colunas `horas_ate_chuva` e `motivo_reaplicacao` (o
+  `ALTER TABLE` está em `banco/RESERVADO_PARA_SQL.md` e precisa rodar antes de usar
+  `--mysql` com esta versão). É por elas que o BI conta as reaplicações.
+
 ### Alterado
 
 - `Area`, `Talhao`, `Insumo`, `Operacao` e `Aplicador` passaram a validar os dados no
@@ -86,9 +97,15 @@
 - Menu: o talhão cadastrado ou corrigido aparece como `[1] Sede / Chico1 - 2,80 ha` (com
   vírgula e o tamanho em ha), e a lista dos dados de exemplo também. A demonstração
   (`bin/main.dart`) continua mostrando o `obterDados()` do model.
+- `ManutencaoService.corrigirAplicacao` passa a exigir as horas até a chuva e o motivo
+  (`null` tira o valor), como já era com a observação.
 
 ### Corrigido
 
+- O aviso de reaplicar por chuva só aparecia na tela do registro; as horas até a chuva não
+  eram gravadas, então a consulta e o detalhe da aplicação não avisavam nada. Agora são
+  gravadas e o aviso aparece sempre. Chuva abaixo do limite grava o motivo `chuva` sozinho,
+  para o BI não perder a reaplicação.
 - `avaliarSobredose`: uma dose exatamente na tolerância (por exemplo 0,33 contra 0,3 com
   tolerância de 10%, ou 330 contra 300 mL/ha) saía como "crítico" por causa do
   arredondamento do ponto flutuante (10,000000000000009%). Agora é "atenção", como a regra

@@ -127,7 +127,7 @@ flowchart TD
 | --- | --- |
 | **ENTRADA: ficha de papel** | É a fonte dos registros da fazenda hoje. As doses chegam em unidades variadas (mL/ha, g/ha, L/1000L), por isso precisam de tratamento antes de ir para o banco. |
 | **ENTRADA: app do drone** | O drone registra o voo no próprio aplicativo, e a ficha de papel complementa. Isso aparece no código em `origemDoRegistro()` (`lib/models/drone.dart`). |
-| **SAÍDA: alerta de reaplicação** | O operador precisa saber na hora que a chuva pode ter lavado o produto. O alerta fica no `ResultadoAplicacao`. |
+| **SAÍDA: alerta de reaplicação** | O operador precisa saber na hora que a chuva pode ter lavado o produto. O alerta fica no `ResultadoAplicacao`. As horas até a chuva e o motivo de reaplicação (chuva, sol, vento, outro) também ficam gravados na aplicação, para o alerta aparecer nas consultas e para o BI contar as reaplicações por imprevisto. |
 | **SAÍDA: status de sobredose** | Mostra, por insumo, se a dose aplicada ficou dentro do previsto (`ok`), pouco acima (`atenção`) ou acima da tolerância (`crítico`). É um enum, nunca um texto solto. |
 | **SAÍDA: resultado e resumo no terminal** | É a prova de que o fluxo funciona sem banco: `bin/main.dart` imprime os números calculados e o resumo de desperdício. |
 | **SAÍDA: dashboard** | É o destino final do dado: o Power BI lê o MySQL e transforma as aplicações em indicadores de desperdício. |

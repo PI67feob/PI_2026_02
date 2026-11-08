@@ -1,6 +1,7 @@
 import 'package:caderno_fazenda/logica/alertas_operacionais.dart';
 import 'package:caderno_fazenda/models/aplicacao.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 
 /// Número com [casas] casas decimais fixas e vírgula, como se escreve no
@@ -39,6 +40,32 @@ String descreverChuva(DecisaoChuva? decisao) {
     DecisaoChuva.entradaInvalida => 'horas inválidas',
     null => 'não informada',
   };
+}
+
+/// Textos dos motivos de reaplicação, na ordem de [MotivoReaplicacao.values],
+/// para montar as listas numeradas dos menus.
+final List<String> textosDosMotivos = [
+  for (final motivo in MotivoReaplicacao.values) motivo.texto,
+];
+
+/// Avisos de reaplicação de uma aplicação, um por causa: a chuva (quando a
+/// decisão é reaplicar) e o [motivo] gravado. A chuva só aparece uma vez, mesmo
+/// que o motivo gravado também seja chuva. A lista vazia quer dizer que nada
+/// pede para refazer a aplicação.
+List<String> avisosDeReaplicacao({
+  required DecisaoChuva? chuva,
+  required double limiteChuvaHoras,
+  MotivoReaplicacao? motivo,
+}) {
+  final chuvaPedeReaplicar = chuva == DecisaoChuva.reaplicar;
+  return [
+    if (chuvaPedeReaplicar)
+      'Choveu em menos de ${formatarCompacto(limiteChuvaHoras)} h: '
+          'REAPLICAR a aplicação.',
+    if (motivo != null &&
+        !(chuvaPedeReaplicar && motivo == MotivoReaplicacao.chuva))
+      'Marcada para reaplicar por ${motivo.texto}: REAPLICAR a aplicação.',
+  ];
 }
 
 /// Texto do resultado da regra da sobredose. `null` quando a dose realizada
@@ -101,12 +128,14 @@ String descreverTalhao(Talhao talhao) {
 
 /// Uma aplicação em uma linha, para escolher em uma lista:
 /// `06/11/2026 | Pulverização | drone | Chico1, Chico2 (6,60 ha) | 2 insumos`.
-String descreverAplicacao(Aplicacao aplicacao) {
+/// Com [reaplicar], a linha termina com ` | REAPLICAR`.
+String descreverAplicacao(Aplicacao aplicacao, {bool reaplicar = false}) {
   final talhoes = aplicacao.talhoes.map((t) => t.nome).join(', ');
   final area = formatarNumero(aplicacao.areaTotalHa);
   final quantidade = aplicacao.insumos.length;
   final palavra = plural(quantidade, 'insumo', 'insumos');
+  final marca = reaplicar ? ' | REAPLICAR' : '';
   return '${formatarData(aplicacao.data)} | ${aplicacao.operacao.descricao} | '
       '${aplicacao.aplicador.tipo} | $talhoes ($area ha) | '
-      '$quantidade $palavra';
+      '$quantidade $palavra$marca';
 }

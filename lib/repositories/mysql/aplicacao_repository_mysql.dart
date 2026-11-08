@@ -3,6 +3,7 @@ import 'package:caderno_fazenda/models/aplicacao.dart';
 import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
 import 'package:caderno_fazenda/models/aplicador.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/unidade_dose.dart';
@@ -50,7 +51,8 @@ class AplicacaoRepositoryMysql implements AplicacaoRepository {
 
   static const _selecao =
       'SELECT a.id_aplicacao, a.id_operacao, a.id_aplicador, '
-      'a.data_aplicacao, a.observacao FROM aplicacao a';
+      'a.data_aplicacao, a.observacao, a.horas_ate_chuva, '
+      'a.motivo_reaplicacao FROM aplicacao a';
 
   @override
   Future<Aplicacao> salvar(Aplicacao aplicacao) {
@@ -62,6 +64,8 @@ class AplicacaoRepositoryMysql implements AplicacaoRepository {
         'id_aplicador': aplicacao.aplicador.id,
         'data_aplicacao': dataSql(aplicacao.data),
         'observacao': aplicacao.observacao,
+        'horas_ate_chuva': _horasParaSql(aplicacao.horasAteChuva),
+        'motivo_reaplicacao': aplicacao.motivoReaplicacao?.codigo,
       };
 
       await conexao.execute('START TRANSACTION');
@@ -336,9 +340,26 @@ class AplicacaoRepositoryMysql implements AplicacaoRepository {
           talhoes: talhoesDaAplicacao,
           insumos: dosesDaAplicacao,
           observacao: textoOuNulo(linha['observacao']),
+          horasAteChuva: decimalOuNulo(linha['horas_ate_chuva']),
+          motivoReaplicacao: _motivoOuNulo(linha['motivo_reaplicacao']),
         ),
       );
     }
     return aplicacoes;
+  }
+
+  /// Horas até a chuva arredondadas para as 2 casas da coluna
+  /// (`DECIMAL(6,2)`), para não mandar ruído de ponto flutuante.
+  double? _horasParaSql(double? horas) {
+    return horas == null ? null : arredondar(horas, 2);
+  }
+
+  /// Converte o texto da coluna `motivo_reaplicacao`; vazio ou NULL é sem
+  /// motivo.
+  MotivoReaplicacao? _motivoOuNulo(Object? valor) {
+    final texto = textoOuNulo(valor)?.trim();
+    return texto == null || texto.isEmpty
+        ? null
+        : MotivoReaplicacao.deCodigo(texto);
   }
 }

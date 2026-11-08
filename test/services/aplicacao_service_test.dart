@@ -3,6 +3,7 @@ import 'package:caderno_fazenda/logica/alertas_operacionais.dart';
 import 'package:caderno_fazenda/models/area.dart';
 import 'package:caderno_fazenda/models/drone.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/trator.dart';
@@ -81,6 +82,7 @@ void main() {
     int? comAplicador,
     int? comOperacao,
     double? comChuva,
+    MotivoReaplicacao? comMotivo,
   }) {
     return servico.registrar(
       data: DateTime(2026, 11, 6),
@@ -90,6 +92,7 @@ void main() {
       doses: comDoses ?? [liquida(real: 345), solida(real: 450)],
       taxaLitrosPorHa: comTaxa,
       horasAteChuva: comChuva,
+      motivoReaplicacao: comMotivo,
     );
   }
 
@@ -273,6 +276,84 @@ void main() {
       await expectLater(registrar(comChuva: -1), recusaDado);
 
       expect(await aplicacoes.listarTodos(), isEmpty);
+    });
+  });
+
+  group('registrar - imprevistos que obrigam a reaplicar', () {
+    test('grava as horas e o motivo junto com a aplicacao', () async {
+      var resultado = await registrar(
+        comChuva: 8,
+        comMotivo: MotivoReaplicacao.vento,
+      );
+
+      expect(resultado.aplicacao.horasAteChuva, 8);
+      expect(resultado.aplicacao.motivoReaplicacao, MotivoReaplicacao.vento);
+      var gravada = (await aplicacoes.listarTodos()).single;
+      expect(gravada.horasAteChuva, 8);
+      expect(gravada.motivoReaplicacao, MotivoReaplicacao.vento);
+    });
+
+    test('chuva abaixo do limite grava o motivo chuva sozinho', () async {
+      var resultado = await registrar(comChuva: 2.5);
+
+      expect(resultado.chuva, DecisaoChuva.reaplicar);
+      expect(resultado.aplicacao.motivoReaplicacao, MotivoReaplicacao.chuva);
+      var gravada = (await aplicacoes.listarTodos()).single;
+      expect(gravada.motivoReaplicacao, MotivoReaplicacao.chuva);
+    });
+
+    test('chuva depois do limite nao grava motivo nenhum', () async {
+      var resultado = await registrar(comChuva: 4);
+
+      expect(resultado.aplicacao.horasAteChuva, 4);
+      expect(resultado.aplicacao.motivoReaplicacao, isNull);
+    });
+
+    test(
+      'o motivo escolhido vale mesmo com a chuva abaixo do limite',
+      () async {
+        var resultado = await registrar(
+          comChuva: 1,
+          comMotivo: MotivoReaplicacao.solCalor,
+        );
+
+        expect(resultado.chuva, DecisaoChuva.reaplicar);
+        expect(
+          resultado.aplicacao.motivoReaplicacao,
+          MotivoReaplicacao.solCalor,
+        );
+      },
+    );
+
+    test('um motivo sem chuva informada e gravado como veio', () async {
+      var resultado = await registrar(comMotivo: MotivoReaplicacao.outro);
+
+      expect(resultado.chuva, isNull);
+      expect(resultado.aplicacao.horasAteChuva, isNull);
+      expect(resultado.aplicacao.motivoReaplicacao, MotivoReaplicacao.outro);
+    });
+
+    test('sem chuva e sem motivo, nada e gravado', () async {
+      var resultado = await registrar();
+
+      expect(resultado.aplicacao.horasAteChuva, isNull);
+      expect(resultado.aplicacao.motivoReaplicacao, isNull);
+    });
+
+    test('decisaoDeChuva e nula quando a chuva nao foi informada', () async {
+      var resultado = await registrar();
+
+      expect(servico.decisaoDeChuva(resultado.aplicacao), isNull);
+    });
+
+    test('decisaoDeChuva usa o limite em vigor, nao o do registro', () async {
+      var resultado = await registrar(comChuva: 5);
+      var aplicacao = resultado.aplicacao;
+      expect(servico.decisaoDeChuva(aplicacao), DecisaoChuva.naoReaplicar);
+
+      var comLimiteMaior = criarServico(limiteChuva: 6);
+
+      expect(comLimiteMaior.decisaoDeChuva(aplicacao), DecisaoChuva.reaplicar);
     });
   });
 

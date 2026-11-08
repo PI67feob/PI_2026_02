@@ -5,6 +5,7 @@ import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
 import 'package:caderno_fazenda/models/area.dart';
 import 'package:caderno_fazenda/models/drone.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/unidade_dose.dart';
@@ -187,6 +188,100 @@ void main() {
         '06/11/2026 | Pulverização | drone | Chico1, Chico2 (6,60 ha) | '
         '1 insumo',
       );
+      expect(
+        descreverAplicacao(aplicacao, reaplicar: true),
+        '06/11/2026 | Pulverização | drone | Chico1, Chico2 (6,60 ha) | '
+        '1 insumo | REAPLICAR',
+      );
     });
+  });
+
+  group('imprevistos que obrigam a reaplicar', () {
+    test('textosDosMotivos segue a ordem do enum', () {
+      expect(textosDosMotivos, ['chuva', 'sol/calor', 'vento', 'outro motivo']);
+    });
+
+    test('sem chuva e sem motivo, não há aviso', () {
+      expect(avisosDeReaplicacao(chuva: null, limiteChuvaHoras: 3), isEmpty);
+      expect(
+        avisosDeReaplicacao(
+          chuva: DecisaoChuva.naoReaplicar,
+          limiteChuvaHoras: 3,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('chuva antes do limite avisa com o limite em vigor', () {
+      expect(
+        avisosDeReaplicacao(chuva: DecisaoChuva.reaplicar, limiteChuvaHoras: 3),
+        ['Choveu em menos de 3 h: REAPLICAR a aplicação.'],
+      );
+      expect(
+        avisosDeReaplicacao(
+          chuva: DecisaoChuva.reaplicar,
+          limiteChuvaHoras: 2.5,
+        ),
+        ['Choveu em menos de 2,5 h: REAPLICAR a aplicação.'],
+      );
+    });
+
+    test('um motivo marcado avisa com o texto do motivo', () {
+      expect(
+        avisosDeReaplicacao(
+          chuva: null,
+          limiteChuvaHoras: 3,
+          motivo: MotivoReaplicacao.solCalor,
+        ),
+        ['Marcada para reaplicar por sol/calor: REAPLICAR a aplicação.'],
+      );
+      expect(
+        avisosDeReaplicacao(
+          chuva: null,
+          limiteChuvaHoras: 3,
+          motivo: MotivoReaplicacao.outro,
+        ),
+        ['Marcada para reaplicar por outro motivo: REAPLICAR a aplicação.'],
+      );
+    });
+
+    test('chuva e outro motivo juntos dão dois avisos', () {
+      expect(
+        avisosDeReaplicacao(
+          chuva: DecisaoChuva.reaplicar,
+          limiteChuvaHoras: 3,
+          motivo: MotivoReaplicacao.vento,
+        ),
+        [
+          'Choveu em menos de 3 h: REAPLICAR a aplicação.',
+          'Marcada para reaplicar por vento: REAPLICAR a aplicação.',
+        ],
+      );
+    });
+
+    test('o motivo chuva não repete o aviso da chuva', () {
+      expect(
+        avisosDeReaplicacao(
+          chuva: DecisaoChuva.reaplicar,
+          limiteChuvaHoras: 3,
+          motivo: MotivoReaplicacao.chuva,
+        ),
+        ['Choveu em menos de 3 h: REAPLICAR a aplicação.'],
+      );
+    });
+
+    test(
+      'o motivo chuva avisa sozinho quando a regra já não manda reaplicar',
+      () {
+        expect(
+          avisosDeReaplicacao(
+            chuva: DecisaoChuva.naoReaplicar,
+            limiteChuvaHoras: 3,
+            motivo: MotivoReaplicacao.chuva,
+          ),
+          ['Marcada para reaplicar por chuva: REAPLICAR a aplicação.'],
+        );
+      },
+    );
   });
 }

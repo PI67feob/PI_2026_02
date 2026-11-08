@@ -2,6 +2,7 @@ import 'package:caderno_fazenda/cli/dados_exemplo.dart';
 import 'package:caderno_fazenda/cli/menu_caderno.dart';
 import 'package:caderno_fazenda/models/aplicacao.dart';
 import 'package:caderno_fazenda/models/area.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/repositories/memoria/repositorios_memoria.dart';
 import 'package:caderno_fazenda/repositories/repositorios.dart';
@@ -451,7 +452,7 @@ void main() {
     test('troca a data e a observação', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '15/11/2026', 'Revisada', 'n', 'n', '', //
+        '1', '15/11/2026', 'Revisada', '', '', 'n', 'n', '', //
       ]);
       expect(sessao.saida, contains('data: 07/11/2026 -> 15/11/2026'));
       expect(sessao.saida, contains('observação: (vazio) -> Revisada'));
@@ -461,10 +462,147 @@ void main() {
       expect(aplicacao.observacao, 'Revisada');
     });
 
+    test('chuva abaixo do limite grava o motivo chuva', () async {
+      final repos = await _comAplicacao();
+      final sessao = await _corrigir(repos, '6', [
+        '1', '', '', '1,5', '', 'n', 'n', '', //
+      ]);
+      expect(sessao.saida, contains('chuva (horas): (vazio) -> 1,5'));
+      expect(
+        sessao.saida,
+        contains('motivo de reaplicação: (nenhum) -> chuva'),
+      );
+      expect(sessao.saida, contains('o motivo fica como chuva'));
+      final aplicacao = await _aplicacao(repos);
+      expect(aplicacao.horasAteChuva, 1.5);
+      expect(aplicacao.motivoReaplicacao, MotivoReaplicacao.chuva);
+      // A tela final já mostra o aviso.
+      expect(sessao.saida, contains('! Choveu em menos de 3 h: REAPLICAR'));
+      expect(sessao.respostasRestantes, 0);
+    });
+
+    test('chuva acima do limite não marca motivo', () async {
+      final repos = await _comAplicacao();
+      final sessao = await _corrigir(repos, '6', [
+        '1', '', '', '5', '', 'n', 'n', '', //
+      ]);
+      expect(sessao.saida, contains('chuva (horas): (vazio) -> 5'));
+      expect(sessao.saida, isNot(contains('o motivo fica como chuva')));
+      final aplicacao = await _aplicacao(repos);
+      expect(aplicacao.horasAteChuva, 5);
+      expect(aplicacao.motivoReaplicacao, isNull);
+    });
+
+    test('escolhe o imprevisto pela lista numerada', () async {
+      final repos = await _comAplicacao();
+      final sessao = await _corrigir(repos, '6', [
+        '1', '', '', '', '2', 'n', 'n', '', //
+      ]);
+      expect(sessao.saida, contains('1. chuva'));
+      expect(sessao.saida, contains('2. sol/calor'));
+      expect(sessao.saida, contains('3. vento'));
+      expect(sessao.saida, contains('4. outro motivo'));
+      expect(
+        sessao.saida,
+        contains('motivo de reaplicação: (nenhum) -> sol/calor'),
+      );
+      expect(
+        (await _aplicacao(repos)).motivoReaplicacao,
+        MotivoReaplicacao.solCalor,
+      );
+    });
+
+    test('Enter mantém o imprevisto e um traço tira', () async {
+      final repos = await _comAplicacao();
+      await _corrigir(repos, '6', ['1', '', '', '', '3', 'n', 'n', '']);
+      expect(
+        (await _aplicacao(repos)).motivoReaplicacao,
+        MotivoReaplicacao.vento,
+      );
+
+      final mantido = await _corrigir(repos, '6', [
+        '1', '', '', '', '', 'n', 'n', //
+      ]);
+      expect(mantido.saida, contains('[atual: vento; Enter = manter'));
+      expect(mantido.saida, contains('Nada foi alterado.'));
+      expect(
+        (await _aplicacao(repos)).motivoReaplicacao,
+        MotivoReaplicacao.vento,
+      );
+
+      final tirado = await _corrigir(repos, '6', [
+        '1', '', '', '', '-', 'n', 'n', '', //
+      ]);
+      expect(
+        tirado.saida,
+        contains('motivo de reaplicação: vento -> (nenhum)'),
+      );
+      expect((await _aplicacao(repos)).motivoReaplicacao, isNull);
+    });
+
+    test('um traço nas horas apaga a chuva', () async {
+      final repos = await _comAplicacao();
+      await _corrigir(repos, '6', ['1', '', '', '8', '', 'n', 'n', '']);
+      expect((await _aplicacao(repos)).horasAteChuva, 8);
+
+      final sessao = await _corrigir(repos, '6', [
+        '1', '', '', '-', '', 'n', 'n', '', //
+      ]);
+      expect(sessao.saida, contains('chuva (horas): 8 -> (vazio)'));
+      expect((await _aplicacao(repos)).horasAteChuva, isNull);
+    });
+
+    test('horas negativas são perguntadas de novo', () async {
+      final repos = await _comAplicacao();
+      final sessao = await _corrigir(repos, '6', [
+        '1', '', '', '-2', '6', '', 'n', 'n', '', //
+      ]);
+      expect(sessao.saida, contains('O valor precisa ser pelo menos 0.'));
+      expect((await _aplicacao(repos)).horasAteChuva, 6);
+    });
+
+    test('tirar o motivo com a chuva abaixo do limite não adianta', () async {
+      final repos = await _comAplicacao();
+      await _corrigir(repos, '6', ['1', '', '', '1', '', 'n', 'n', '']);
+
+      final sessao = await _corrigir(repos, '6', [
+        '1', '', '', '', '-', 'n', 'n', //
+      ]);
+
+      expect(sessao.saida, contains('o motivo fica como chuva'));
+      expect(sessao.saida, contains('Nada foi alterado.'));
+      expect(
+        (await _aplicacao(repos)).motivoReaplicacao,
+        MotivoReaplicacao.chuva,
+      );
+    });
+
+    test('o limite da chuva dos parâmetros vale na correção', () async {
+      final repos = await _comAplicacao();
+      final sessao = await _rodar([
+        '6', 's', '', '6', '', // limite da chuva: 6 h
+        '8', '6', '1', '', '', '5', '', 'n', 'n', '', '0',
+        '0',
+      ], repos);
+      expect(sessao.saida, contains('o motivo fica como chuva'));
+      final aplicacao = await _aplicacao(repos);
+      expect(aplicacao.horasAteChuva, 5);
+      expect(aplicacao.motivoReaplicacao, MotivoReaplicacao.chuva);
+    });
+
     test('um traço apaga a observação', () async {
       final repos = await _comAplicacao();
-      await _corrigir(repos, '6', ['1', '', 'Revisada', 'n', 'n', '']);
-      final sessao = await _corrigir(repos, '6', ['1', '', '-', 'n', 'n', '']);
+      await _corrigir(repos, '6', ['1', '', 'Revisada', '', '', 'n', 'n', '']);
+      final sessao = await _corrigir(repos, '6', [
+        '1',
+        '',
+        '-',
+        '',
+        '',
+        'n',
+        'n',
+        '',
+      ]);
       expect(sessao.saida, contains('observação: Revisada -> (vazio)'));
       expect((await _aplicacao(repos)).observacao, isNull);
     });
@@ -472,7 +610,7 @@ void main() {
     test('data que não existe é perguntada de novo', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '31/02/2026', '15/11/2026', '', 'n', 'n', '', //
+        '1', '31/02/2026', '15/11/2026', '', '', '', 'n', 'n', '', //
       ]);
       expect(sessao.saida, contains('Data inválida.'));
       expect((await _aplicacao(repos)).data, DateTime(2026, 11, 15));
@@ -481,7 +619,7 @@ void main() {
     test('a dose realizada em mL/ha vira L/ha', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '', '', 's', '1', '345', 'n', '', //
+        '1', '', '', '', '', 's', '1', '345', 'n', '', //
       ]);
       expect(
         sessao.saida,
@@ -500,7 +638,7 @@ void main() {
     test('a dose realizada em L/ha fica como foi digitada', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '', '', 's', '2', '0,31', 'n', '', //
+        '1', '', '', '', '', 's', '2', '0,31', 'n', '', //
       ]);
       expect(sessao.saida, contains('ainda não informada -> 0,31 L/ha'));
       expect(sessao.saida, isNot(contains('anotada como')));
@@ -513,7 +651,7 @@ void main() {
     test('sólido: g/ha vira kg/ha', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '', '', 'n', 's', '1', '21000', '', //
+        '1', '', '', '', '', 'n', 's', '1', '21000', '', //
       ]);
       expect(
         sessao.saida,
@@ -531,7 +669,7 @@ void main() {
     test('só oferece as unidades do tipo do insumo', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '', '', 's', '', 's', '', '', //
+        '1', '', '', '', '', 's', '', 's', '', '', //
       ]);
       expect(sessao.saida, contains('1. mL/ha'));
       expect(sessao.saida, contains('2. L/ha'));
@@ -544,7 +682,7 @@ void main() {
     test('corrige a dose de dois insumos de uma vez', () async {
       final repos = await _comAplicacao();
       await _corrigir(repos, '6', [
-        '1', '', '', 's', '1', '330', 's', '2', '22', '', //
+        '1', '', '', '', '', 's', '1', '330', 's', '2', '22', '', //
       ]);
       final aplicacao = await _aplicacao(repos);
       expect(aplicacao.insumos[0].doseRealizada, closeTo(0.33, 1e-9));
@@ -556,7 +694,7 @@ void main() {
       () async {
         final repos = await _comAplicacao();
         final sessao = await _corrigir(repos, '6', [
-          '1', '', '', 's', '1', '3450', 'n', '', //
+          '1', '', '', '', '', 's', '1', '3450', 'n', '', //
         ]);
         expect(
           sessao.saida,
@@ -573,7 +711,18 @@ void main() {
 
     test('mesmo com o aviso, responder sim grava', () async {
       final repos = await _comAplicacao();
-      await _corrigir(repos, '6', ['1', '', '', 's', '1', '3450', 'n', 's']);
+      await _corrigir(repos, '6', [
+        '1',
+        '',
+        '',
+        '',
+        '',
+        's',
+        '1',
+        '3450',
+        'n',
+        's',
+      ]);
       expect(
         (await _aplicacao(repos)).insumos[0].doseRealizada,
         closeTo(3.45, 1e-9),
@@ -583,7 +732,7 @@ void main() {
     test('dose normal confirma com Enter (padrão sim)', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '', '', 's', '1', '310', 'n', '', //
+        '1', '', '', '', '', 's', '1', '310', 'n', '', //
       ]);
       expect(sessao.saida, contains('Salvar a correção? (S/n)'));
       expect(sessao.saida, isNot(contains('Confira a unidade')));
@@ -591,8 +740,27 @@ void main() {
 
     test('responder não em "mudar a dose" mantém a dose', () async {
       final repos = await _comAplicacao();
-      await _corrigir(repos, '6', ['1', '', '', 's', '1', '310', 'n', '']);
-      final sessao = await _corrigir(repos, '6', ['1', '', '', 'n', 'n']);
+      await _corrigir(repos, '6', [
+        '1',
+        '',
+        '',
+        '',
+        '',
+        's',
+        '1',
+        '310',
+        'n',
+        '',
+      ]);
+      final sessao = await _corrigir(repos, '6', [
+        '1',
+        '',
+        '',
+        '',
+        '',
+        'n',
+        'n',
+      ]);
       expect(sessao.saida, contains('Nada foi alterado.'));
       expect(
         (await _aplicacao(repos)).insumos[0].doseRealizada,
@@ -602,7 +770,7 @@ void main() {
 
     test('Enter na unidade ou no número não muda a dose', () async {
       final repos = await _comAplicacao();
-      await _corrigir(repos, '6', ['1', '', '', 's', '', 's', '2', '']);
+      await _corrigir(repos, '6', ['1', '', '', '', '', 's', '', 's', '2', '']);
       expect((await _aplicacao(repos)).insumos[0].doseRealizada, isNull);
       expect((await _aplicacao(repos)).insumos[1].doseRealizada, isNull);
     });
@@ -610,7 +778,7 @@ void main() {
     test('dose negativa é perguntada de novo', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', [
-        '1', '', '', 's', '2', '-1', '0,3', 'n', '', //
+        '1', '', '', '', '', 's', '2', '-1', '0,3', 'n', '', //
       ]);
       expect(sessao.saida, contains('O valor precisa ser pelo menos 0.'));
       expect(
@@ -622,7 +790,7 @@ void main() {
     test('responder não na confirmação não grava nada', () async {
       final repos = await _comAplicacao();
       await _corrigir(repos, '6', [
-        '1', '15/11/2026', 'Revisada', 's', '1', '310', 'n', 'n', //
+        '1', '15/11/2026', 'Revisada', '', '', 's', '1', '310', 'n', 'n', //
       ]);
       final aplicacao = await _aplicacao(repos);
       expect(aplicacao.data, DateTime(2026, 11, 7));

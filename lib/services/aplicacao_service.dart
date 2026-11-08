@@ -8,6 +8,7 @@ import 'package:caderno_fazenda/logica/totais_desperdicio.dart';
 import 'package:caderno_fazenda/models/aplicacao.dart';
 import 'package:caderno_fazenda/models/aplicacao_insumo.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/models/unidade_dose.dart';
@@ -61,7 +62,11 @@ class AplicacaoService {
   /// 5. Calcula o volume de calda (área x taxa) e a massa de produtos sólidos.
   /// 6. Calcula quantas viagens o aplicador faz para levar a calda e os
   ///    sólidos.
-  /// 7. Aplica a regra da chuva, se [horasAteChuva] foi informada.
+  /// 7. Aplica a regra da chuva, se [horasAteChuva] foi informada. As horas e
+  ///    o [motivoReaplicacao] (chuva, sol, vento...) ficam gravados na
+  ///    aplicação, para o aviso de reaplicar aparecer nas consultas e o BI
+  ///    agrupar por imprevisto. Se a regra mandar reaplicar e nenhum motivo
+  ///    foi informado, o motivo gravado é [MotivoReaplicacao.chuva].
   /// 8. Calcula, por insumo, a quantidade prevista, a quantidade a comprar, o
   ///    desperdício e o status de sobredose.
   /// 9. Grava a aplicação.
@@ -85,6 +90,7 @@ class AplicacaoService {
     required List<DoseInformada> doses,
     required double taxaLitrosPorHa,
     double? horasAteChuva,
+    MotivoReaplicacao? motivoReaplicacao,
     String? observacao,
   }) async {
     _exigirTaxa(taxaLitrosPorHa);
@@ -101,13 +107,14 @@ class AplicacaoService {
       talhoes: talhoes,
       insumos: itens,
       observacao: observacao,
+      horasAteChuva: horasAteChuva,
+      motivoReaplicacao: motivoReaplicacao,
     );
 
     final carga = _carga(aplicacao, taxaLitrosPorHa);
-
-    DecisaoChuva? chuva;
-    if (horasAteChuva != null) {
-      chuva = _decidirChuva(horasAteChuva);
+    final chuva = decisaoDeChuva(aplicacao);
+    if (chuva == DecisaoChuva.reaplicar) {
+      aplicacao.motivoReaplicacao ??= MotivoReaplicacao.chuva;
     }
 
     final avaliacoes = <AvaliacaoInsumo>[];
@@ -298,10 +305,21 @@ class AplicacaoService {
     }
   }
 
-  /// Passo 7: aplica a regra da chuva com o limite configurado.
-  DecisaoChuva _decidirChuva(double horas) {
-    final limite = parametros.limiteChuvaHoras;
-    final decisao = avaliarChuva(horas, limiteHoras: limite);
+  /// Passo 7: aplica a regra da chuva, com o limite configurado, às horas
+  /// gravadas na [aplicacao]. Devolve null se a chuva não foi informada.
+  ///
+  /// A decisão não é gravada: é calculada de novo a cada consulta, com o
+  /// limite em vigor. Se a fazenda mudar o limite, as consultas passam a usar
+  /// o novo.
+  DecisaoChuva? decisaoDeChuva(Aplicacao aplicacao) {
+    final horas = aplicacao.horasAteChuva;
+    if (horas == null) {
+      return null;
+    }
+    final decisao = avaliarChuva(
+      horas,
+      limiteHoras: parametros.limiteChuvaHoras,
+    );
     if (decisao == DecisaoChuva.entradaInvalida) {
       throw DadoInvalidoException('chuva (horas)', 'não pode ser negativa');
     }

@@ -51,7 +51,7 @@ nome ou coluna mudar, só o repositório MySQL muda.
 | `insumo` | `Insumo` | `InsumoRepository` | nome, marca (opcional) e tipo; **sem** unidade de medida |
 | `aplicador` | `Aplicador` (`Trator`, `Drone`, `BombaCostal`) | `AplicadorRepository` | coluna `tipo` vira a subclasse via `criarAplicador`; as duas capacidades podem ser nulas |
 | `operacao` | `Operacao` | `OperacaoRepository` | descrição |
-| `aplicacao` | `Aplicacao` | `AplicacaoRepository` | `data` é DATE; **não** há coluna de volume de calda (ele é calculado) |
+| `aplicacao` | `Aplicacao` | `AplicacaoRepository` | `data` é DATE; **não** há coluna de volume de calda (ele é calculado); `horas_ate_chuva` e `motivo_reaplicacao` (ver *Reaplicação*, abaixo) |
 | `aplicacao_talhao` | lista `Aplicacao.talhoes` | `AplicacaoRepository.salvar` | N:N; chave primária composta pelas duas chaves estrangeiras |
 | `aplicacao_insumo` | `AplicacaoInsumo` | `AplicacaoRepository.salvar` | N:N com dose; unidade só `L/ha` ou `kg/ha` |
 
@@ -98,6 +98,28 @@ O que o repositório MySQL faz para encaixar as classes nas tabelas do DBA:
 - **Aplicação.** `salvar` regrava as linhas de `aplicacao_talhao` e
   `aplicacao_insumo`, e `remover` apaga as filhas antes da aplicação, tudo na
   mesma transação. Por isso funciona com `ON DELETE CASCADE` ou com `RESTRICT`.
+- **Reaplicação (colunas novas em `aplicacao`).** `Aplicacao.horasAteChuva` vai para
+  `horas_ate_chuva` (`DECIMAL(6,2)`, aceita NULL) e `Aplicacao.motivoReaplicacao` vai para
+  `motivo_reaplicacao` (`VARCHAR(20)`, aceita NULL) com um destes textos: `chuva`, `sol`,
+  `vento` ou `outro`. NULL quer dizer que nada pede para refazer a aplicação. O BI agrupa por
+  `motivo_reaplicacao` para contar as reaplicações por imprevisto, e `horas_ate_chuva` guarda
+  a distância até a chuva. Quando a chuva vem antes do limite da fazenda e nenhum motivo é
+  informado, o programa grava `chuva` sozinho. O `ALTER TABLE` precisa rodar **antes** de
+  usar esta versão com `--mysql`:
+
+  ```sql
+  ALTER TABLE aplicacao
+    ADD COLUMN horas_ate_chuva DECIMAL(6,2) NULL,
+    ADD COLUMN motivo_reaplicacao VARCHAR(20) NULL,
+    ADD CONSTRAINT chk_aplicacao_horas_chuva
+      CHECK (horas_ate_chuva IS NULL OR horas_ate_chuva >= 0),
+    ADD CONSTRAINT chk_aplicacao_motivo_reaplicacao
+      CHECK (motivo_reaplicacao IS NULL
+             OR motivo_reaplicacao IN ('chuva', 'sol', 'vento', 'outro'));
+  ```
+
+  Os triggers de auditoria de `aplicacao` continuam valendo; se eles listam as colunas uma a
+  uma, vale incluir as duas novas.
 - **Auditoria.** Os triggers de `insumo`, `aplicacao`, `aplicacao_insumo` e
   `aplicacao_talhao` gravam em `historico_alteracoes`. `area`, `talhao`,
   `operacao` e `aplicador` não têm trigger.

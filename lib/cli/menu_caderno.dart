@@ -11,6 +11,7 @@ import 'package:caderno_fazenda/models/aplicador.dart';
 import 'package:caderno_fazenda/models/aplicador_fabrica.dart';
 import 'package:caderno_fazenda/models/area.dart';
 import 'package:caderno_fazenda/models/insumo.dart';
+import 'package:caderno_fazenda/models/motivo_reaplicacao.dart';
 import 'package:caderno_fazenda/models/operacao.dart';
 import 'package:caderno_fazenda/models/talhao.dart';
 import 'package:caderno_fazenda/repositories/repositorios.dart';
@@ -90,6 +91,7 @@ class MenuCaderno {
       _ui,
       _repositorios,
       mostrarAplicacao: _detalharAplicacao,
+      limiteChuvaHoras: () => _parametros.limiteChuvaHoras,
     );
   }
 
@@ -408,6 +410,17 @@ class MenuCaderno {
       'Horas entre o fim da aplicação e a chuva [Enter = sem informação]',
       minimo: 0,
     );
+    _ui.linha(
+      'Algum imprevisto vai obrigar a reaplicar? (Se a chuva veio antes do '
+      'limite, o sistema marca chuva sozinho.)',
+    );
+    final posicaoMotivo = _ui.escolherOpcao(
+      'Imprevisto [Enter = nenhum]',
+      textosDosMotivos,
+    );
+    final motivo = posicaoMotivo == null
+        ? null
+        : MotivoReaplicacao.values[posicaoMotivo];
     final observacao = _ui.perguntarTexto('Observação [Enter = nenhuma]');
 
     final talhaoIds = [for (final talhao in escolhidos) talhao.id!];
@@ -432,6 +445,7 @@ class MenuCaderno {
       itens: itens,
       carga: carga,
       horas: horas,
+      motivo: motivo,
       observacao: observacao,
     );
     if (!_ui.confirmar('Gravar esta aplicação?', padrao: true)) {
@@ -447,6 +461,7 @@ class MenuCaderno {
       doses: doses,
       taxaLitrosPorHa: taxa,
       horasAteChuva: horas,
+      motivoReaplicacao: motivo,
       observacao: observacao,
     );
     _mostrarResultado(resultado);
@@ -490,6 +505,7 @@ class MenuCaderno {
     required List<_ItemDigitado> itens,
     required CargaAplicacao carga,
     required double? horas,
+    required MotivoReaplicacao? motivo,
     required String? observacao,
   }) {
     _ui.secao('CONFERIR ANTES DE GRAVAR');
@@ -521,6 +537,9 @@ class MenuCaderno {
     );
     if (horas != null) {
       _ui.linha('  Chuva: ${formatarCompacto(horas)} h depois da aplicação');
+    }
+    if (motivo != null) {
+      _ui.linha('  Reaplicar por: ${motivo.texto}');
     }
     if (observacao != null) {
       _ui.linha('  Observação: $observacao');
@@ -574,12 +593,18 @@ class MenuCaderno {
       viagensSolidos: resultado.viagensSolidos,
     );
     _ui.linha('  Chuva: ${descreverChuva(resultado.chuva)}');
-
-    final alertas = <String>[];
-    if (resultado.chuva == DecisaoChuva.reaplicar) {
-      final limite = formatarCompacto(_parametros.limiteChuvaHoras);
-      alertas.add('Choveu em menos de $limite h: REAPLICAR a aplicação.');
+    final motivo = aplicacao.motivoReaplicacao;
+    if (motivo != null) {
+      _ui.linha('  Reaplicar por: ${motivo.texto}');
     }
+
+    final alertas = <String>[
+      ...avisosDeReaplicacao(
+        chuva: resultado.chuva,
+        limiteChuvaHoras: _parametros.limiteChuvaHoras,
+        motivo: motivo,
+      ),
+    ];
     for (final avaliacao in resultado.insumos) {
       final item = avaliacao.item;
       final unidade = item.unidade.texto;
@@ -648,6 +673,7 @@ class MenuCaderno {
       OpcaoMenu('Aplicadores', _listarAplicadores),
       OpcaoMenu('Operações', _listarOperacoes),
       OpcaoMenu('Aplicações registradas', _listarAplicacoes),
+      OpcaoMenu('Aplicações a reaplicar (imprevistos)', _listarReaplicacoes),
     ]);
   }
 
@@ -722,16 +748,81 @@ class MenuCaderno {
     final escolhida = _ui.escolherPorId(
       'Id da aplicação para ver os detalhes [Enter = voltar]',
       aplicacoes,
-      descreverAplicacao,
+      (aplicacao) => descreverAplicacao(
+        aplicacao,
+        reaplicar: _avisosDeReaplicacao(aplicacao).isNotEmpty,
+      ),
     );
     if (escolhida != null) {
       _detalharAplicacao(escolhida);
     }
   }
 
+  /// Lista as aplicações que pedem reaplicação e conta quantas há por
+  /// imprevisto. É a mesma categoria que fica gravada no banco para o BI.
+  Future<void> _listarReaplicacoes() async {
+    final aplicacoes = await _repositorios.aplicacoes.listarTodos();
+    final pendentes = [
+      for (final aplicacao in aplicacoes)
+        if (_avisosDeReaplicacao(aplicacao).isNotEmpty) aplicacao,
+    ];
+    if (pendentes.isEmpty) {
+      _ui.linha('Nenhuma aplicação precisa ser reaplicada.');
+      return;
+    }
+    _ui.secao('APLICAÇÕES A REAPLICAR');
+    final porImprevisto = <MotivoReaplicacao, int>{};
+    for (final aplicacao in pendentes) {
+      _ui.linha('  [${aplicacao.id}] ${descreverAplicacao(aplicacao)}');
+      for (final aviso in _avisosDeReaplicacao(aplicacao)) {
+        _ui.linha('       ! $aviso');
+      }
+      final imprevisto = _imprevistoDe(aplicacao);
+      if (imprevisto != null) {
+        porImprevisto[imprevisto] = (porImprevisto[imprevisto] ?? 0) + 1;
+      }
+    }
+    _ui.linha('\n  Por imprevisto:');
+    for (final motivo in MotivoReaplicacao.values) {
+      final quantidade = porImprevisto[motivo];
+      if (quantidade != null) {
+        _ui.linha('    ${motivo.texto}: $quantidade');
+      }
+    }
+  }
+
+  /// O imprevisto que conta para a aplicação: o motivo gravado ou, nas
+  /// aplicações antigas sem motivo, a chuva quando a regra manda reaplicar.
+  MotivoReaplicacao? _imprevistoDe(Aplicacao aplicacao) {
+    final gravado = aplicacao.motivoReaplicacao;
+    if (gravado != null) {
+      return gravado;
+    }
+    final chuva = _aplicacaoService.decisaoDeChuva(aplicacao);
+    return chuva == DecisaoChuva.reaplicar ? MotivoReaplicacao.chuva : null;
+  }
+
+  /// Os avisos de reaplicação de uma aplicação já gravada, calculados com o
+  /// limite de chuva em vigor.
+  List<String> _avisosDeReaplicacao(Aplicacao aplicacao) {
+    return avisosDeReaplicacao(
+      chuva: _aplicacaoService.decisaoDeChuva(aplicacao),
+      limiteChuvaHoras: _parametros.limiteChuvaHoras,
+      motivo: aplicacao.motivoReaplicacao,
+    );
+  }
+
   void _detalharAplicacao(Aplicacao aplicacao) {
     final aplicador = aplicacao.aplicador;
     _ui.secao('APLICAÇÃO ${aplicacao.id}');
+    // Os avisos vêm primeiro, para não passarem despercebidos.
+    final avisos = _avisosDeReaplicacao(aplicacao);
+    if (avisos.isNotEmpty) {
+      _ui.linha('  ALERTAS:');
+      for (final aviso in avisos) {
+        _ui.linha('   ! $aviso');
+      }
+    }
     _ui.linha('  Data: ${formatarData(aplicacao.data)}');
     _ui.linha('  Operação: ${aplicacao.operacao.descricao}');
     _ui.linha('  Aplicador: ${aplicador.descreverCapacidade()}');
@@ -741,6 +832,20 @@ class MenuCaderno {
         .join(', ');
     _ui.linha('  Talhões: $talhoes');
     _ui.linha('  Área total: ${formatarNumero(aplicacao.areaTotalHa)} ha');
+    final horas = aplicacao.horasAteChuva;
+    if (horas == null) {
+      _ui.linha('  Chuva: não informada');
+    } else {
+      final decisao = _aplicacaoService.decisaoDeChuva(aplicacao);
+      _ui.linha(
+        '  Chuva: ${formatarCompacto(horas)} h depois da aplicação '
+        '(${descreverChuva(decisao)})',
+      );
+    }
+    final motivo = aplicacao.motivoReaplicacao;
+    if (motivo != null) {
+      _ui.linha('  Reaplicar por: ${motivo.texto}');
+    }
     final observacao = aplicacao.observacao;
     if (observacao != null) {
       _ui.linha('  Observação: $observacao');

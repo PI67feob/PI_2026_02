@@ -169,6 +169,49 @@ void main() {
     });
   });
 
+  group('editarOpcaoOpcional', () {
+    const opcoes = ['chuva', 'sol/calor', 'vento'];
+
+    test('mostra as opções numeradas e o valor atual', () {
+      final ui = conversar(['']);
+      ui.editarOpcaoOpcional('Imprevisto', opcoes, 1);
+      expect(terminal.saida, contains('1. chuva'));
+      expect(terminal.saida, contains('3. vento'));
+      expect(
+        terminal.saida,
+        contains('Imprevisto [atual: sol/calor; Enter = manter; - = tirar]: '),
+      );
+    });
+
+    test('Enter mantém a opção atual', () {
+      expect(conversar(['']).editarOpcaoOpcional('x', opcoes, 2), 2);
+    });
+
+    test('Enter sem opção atual continua sem opção e diz "nenhum"', () {
+      final ui = conversar(['']);
+      expect(ui.editarOpcaoOpcional('x', opcoes, null), isNull);
+      expect(terminal.saida, contains('[atual: nenhum;'));
+    });
+
+    test('um traço tira a escolha', () {
+      expect(conversar(['-']).editarOpcaoOpcional('x', opcoes, 0), isNull);
+    });
+
+    test('um número da lista troca a opção (devolve a posição de 0)', () {
+      expect(conversar(['3']).editarOpcaoOpcional('x', opcoes, null), 2);
+      expect(conversar(['1']).editarOpcaoOpcional('x', opcoes, 2), 0);
+    });
+
+    test('repete a pergunta se o número não está na lista ou não é número', () {
+      final ui = conversar(['0', '4', 'vento', '2']);
+      expect(ui.editarOpcaoOpcional('x', opcoes, null), 1);
+      expect(
+        RegExp('Escolha um número de 1 a 3').allMatches(terminal.saida).length,
+        3,
+      );
+    });
+  });
+
   group('editarNumero', () {
     test('Enter mantém o valor atual, escrito sem zeros sobrando', () {
       final ui = conversar(['']);

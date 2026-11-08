@@ -121,6 +121,36 @@ class Interacao {
     return resposta == '-' ? null : resposta;
   }
 
+  /// Mostra as [opcoes] numeradas e pergunta qual passa a valer. [atual] é a
+  /// posição (a partir de 0) da opção de hoje, ou null se não há nenhuma.
+  /// Enter mantém a atual e `-` tira a escolha (devolve null). Repete a
+  /// pergunta se a resposta não for um número da lista.
+  int? editarOpcaoOpcional(String rotulo, List<String> opcoes, int? atual) {
+    for (var i = 0; i < opcoes.length; i++) {
+      linha('  ${i + 1}. ${opcoes[i]}');
+    }
+    final mostrado = atual == null ? 'nenhum' : opcoes[atual];
+    while (true) {
+      final resposta = perguntar(
+        '$rotulo [atual: $mostrado; Enter = manter; - = tirar]',
+      );
+      if (resposta.isEmpty) {
+        return atual;
+      }
+      if (resposta == '-') {
+        return null;
+      }
+      final numero = int.tryParse(resposta);
+      if (numero != null && numero >= 1 && numero <= opcoes.length) {
+        return numero - 1;
+      }
+      linha(
+        '  Escolha um número de 1 a ${opcoes.length}, - para tirar ou Enter '
+        'para manter.',
+      );
+    }
+  }
+
   /// Pergunta o novo valor de um número. Enter mantém o [atual]. Repete a
   /// pergunta se a resposta não for número ou não respeitar o [minimo].
   double editarNumero(
