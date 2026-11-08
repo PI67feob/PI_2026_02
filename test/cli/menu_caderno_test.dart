@@ -19,14 +19,21 @@ class _Sessao {
 }
 
 /// Roda o menu com as [respostas] prontas, em memória e com a data fixada em
-/// 07/11/2026. Passe [repositorios] para começar de dados já cadastrados.
+/// 07/11/2026. Passe [repositorios] para começar de dados já cadastrados e
+/// [pausas] para o menu esperar um Enter depois de cada opção.
 Future<_Sessao> _rodar(
   List<String> respostas, {
   Repositorios? repositorios,
+  bool pausas = false,
 }) async {
   final repos = repositorios ?? Repositorios.memoria();
   final terminal = TerminalSimulado(respostas);
-  final menu = MenuCaderno(repos, terminal, agora: () => DateTime(2026, 11, 7));
+  final menu = MenuCaderno(
+    repos,
+    terminal,
+    agora: () => DateTime(2026, 11, 7),
+    pausas: pausas,
+  );
   await menu.executar();
   return _Sessao(repos, terminal.saida, terminal.respostasRestantes);
 }
@@ -70,7 +77,7 @@ void main() {
   group('abertura e encerramento', () {
     test('a opção 0 sai do programa', () async {
       final sessao = await _rodar(['0']);
-      expect(sessao.saida, contains('=== MENU PRINCIPAL ==='));
+      expect(sessao.saida, contains('  MENU PRINCIPAL\n'));
       expect(sessao.saida, contains('Até logo!'));
       expect(sessao.respostasRestantes, 0);
     });
@@ -99,6 +106,105 @@ void main() {
       final sessao = await _rodar(['9', 'abc', '', '0']);
       expect(sessao.saida, contains('Opção inválida.'));
       expect(sessao.saida, contains('Até logo!'));
+    });
+  });
+
+  group('visual e pausas', () {
+    test('a tela de abertura explica como usar', () async {
+      final sessao = await _rodar(['0']);
+      expect(sessao.saida, contains('Como usar: digite o número da opção'));
+      expect(sessao.saida, contains('Primeira vez?'));
+    });
+
+    test('o menu principal separa a opção de sair das outras', () async {
+      final sessao = await _rodar(['0']);
+      expect(sessao.saida, contains('  9. Excluir um registro'));
+      expect(sessao.saida, contains('\n\n  0. Sair\n\nEscolha uma opção: '));
+    });
+
+    test('com pausas, o resultado fica na tela até o Enter', () async {
+      final sessao = await _rodar(['7', '', '0'], pausas: true);
+      final saida = sessao.saida;
+      expect(saida, contains('Dados de exemplo prontos'));
+      expect(saida, contains('Aperte Enter para voltar ao menu...'));
+      final resultado = saida.indexOf('Agora já dá para usar');
+      final pausa = saida.indexOf('Aperte Enter');
+      expect(resultado < pausa, isTrue);
+      expect(sessao.respostasRestantes, 0);
+    });
+
+    test(
+      'um submenu não pede Enter ao ser aberto nem ao ser fechado',
+      () async {
+        final sessao = await _rodar(['3', '0', '0'], pausas: true);
+        expect(sessao.saida, isNot(contains('Aperte Enter')));
+        expect(sessao.respostasRestantes, 0);
+      },
+    );
+
+    test('dentro de um submenu, a pausa vem depois de cada consulta', () async {
+      final sessao = await _rodar(['3', '1', '', '0', '0'], pausas: true);
+      expect(sessao.saida, contains('Nenhuma área cadastrada.'));
+      expect('Aperte Enter'.allMatches(sessao.saida).length, 1);
+      expect(sessao.respostasRestantes, 0);
+    });
+
+    test('sem pausas, nenhuma tela pede Enter', () async {
+      final sessao = await _rodar(['7', '0']);
+      expect(sessao.saida, isNot(contains('Aperte Enter')));
+      expect(sessao.respostasRestantes, 0);
+    });
+
+    test('cadastro que dá certo vem marcado com [ok]', () async {
+      final sessao = await _rodar(['1', '1', 'Sede', '0', '0']);
+      expect(sessao.saida, contains('  [ok] Área cadastrada: [1] Sede'));
+    });
+
+    test('cadastro repetido vem marcado com [!]', () async {
+      final sessao = await _rodar(['1', '1', 'Sede', '1', 'Sede', '0', '0']);
+      expect(sessao.saida, contains('  [!] Já existe a área "Sede"'));
+    });
+
+    test('o registro mostra os 6 passos', () async {
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(),
+        '0',
+      ], repositorios: await _comExemplo());
+      final saida = sessao.saida;
+      expect(saida, contains('Passo 1 de 6 - Operação'));
+      expect(saida, contains('Passo 2 de 6 - Aplicador'));
+      expect(saida, contains('Passo 3 de 6 - Talhões'));
+      expect(saida, contains('Passo 4 de 6 - Data e taxa de aplicação'));
+      expect(saida, contains('Passo 5 de 6 - Insumo 1'));
+      expect(saida, contains('Passo 5 de 6 - Insumo 2'));
+      expect(saida, contains('Passo 6 de 6 - Chuva e imprevistos'));
+      expect(sessao.respostasRestantes, 0);
+    });
+
+    test('os passos aparecem na ordem, antes da conferência', () async {
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(),
+        '0',
+      ], repositorios: await _comExemplo());
+      final saida = sessao.saida;
+      final primeiro = saida.indexOf('Passo 1 de 6');
+      final ultimo = saida.indexOf('Passo 6 de 6');
+      final conferir = saida.indexOf('  CONFERIR ANTES DE GRAVAR\n');
+      expect(primeiro < ultimo, isTrue);
+      expect(ultimo < conferir, isTrue);
+    });
+
+    test('desistir na conferência avisa que nada foi gravado', () async {
+      final sessao = await _rodar([
+        ..._registrarDemonstracao(confirmar: 'n'),
+        '0',
+      ], repositorios: await _comExemplo());
+      expect(sessao.saida, contains('  [!] Cancelado. Nada foi gravado.'));
+    });
+
+    test('uma recusa do sistema aparece marcada com [!]', () async {
+      final sessao = await _rodar(['2', '0']);
+      expect(sessao.saida, contains('  [!] Antes de registrar, cadastre:'));
     });
   });
 
@@ -295,7 +401,7 @@ void main() {
       ], repositorios: repos);
       final saida = sessao.saida;
 
-      expect(saida, contains('=== CONFERIR ANTES DE GRAVAR ==='));
+      expect(saida, contains('  CONFERIR ANTES DE GRAVAR\n'));
       expect(saida, contains('Data: 07/11/2026'));
       expect(saida, contains('Talhões: Chico1, Chico2 (6,60 ha)'));
       expect(
@@ -303,7 +409,7 @@ void main() {
         contains('Orkestra SC: prevista 300 mL/ha, realizada 345 mL/ha'),
       );
 
-      expect(saida, contains('=== APLICAÇÃO 1 REGISTRADA ==='));
+      expect(saida, contains('  APLICAÇÃO 1 REGISTRADA\n'));
       expect(saida, contains('Registrado em: app do drone e ficha de papel'));
       expect(saida, contains('Volume de calda: 66,00 L'));
       expect(
@@ -371,7 +477,7 @@ void main() {
       final saida = sessao.saida;
       expect(saida, isNot(contains('Capacidade excedida')));
       expect(saida, isNot(contains('Tentar de novo')));
-      expect(saida, contains('=== APLICAÇÃO 1 REGISTRADA ==='));
+      expect(saida, contains('  APLICAÇÃO 1 REGISTRADA\n'));
       expect(saida, contains('Volume de calda: 132,00 L'));
       expect(
         saida,
@@ -394,7 +500,7 @@ void main() {
           '0',
         ], repositorios: repos);
         final saida = sessao.saida;
-        final conferencia = saida.indexOf('=== CONFERIR ANTES DE GRAVAR ===');
+        final conferencia = saida.indexOf('  CONFERIR ANTES DE GRAVAR\n');
         final viagens = saida.indexOf(
           'Viagens da calda: 2 viagens (até 70 L por viagem)',
         );
@@ -563,7 +669,7 @@ void main() {
           '[1] 07/11/2026 | Pulverização | drone | Chico1, Chico2 (6,60 ha) | 2 insumos',
         ),
       );
-      expect(saida, contains('=== APLICAÇÃO 1 ==='));
+      expect(saida, contains('  APLICAÇÃO 1\n'));
       expect(saida, contains('Observação: Teste do menu'));
       expect(saida, contains('Talhões: Chico1 (2,80 ha), Chico2 (3,80 ha)'));
       expect(saida, contains('desperdício: 15,0%'));
@@ -586,7 +692,7 @@ void main() {
       final saida = sessao.saida;
       expect(
         saida,
-        contains('=== RESUMO DE DESPERDÍCIO (todas as aplicações) ==='),
+        contains('  RESUMO DE DESPERDÍCIO (todas as aplicações)\n'),
       );
       expect(saida, contains('previsto: 1,980 L'));
       expect(saida, contains('realizado: 2,277 L'));
@@ -674,10 +780,7 @@ void main() {
   group('calculadora dentro do menu', () {
     test('abre pela opção 5 e volta ao menu principal', () async {
       final sessao = await _rodar(['5', '1', '6,6', '10', '0', '0']);
-      expect(
-        sessao.saida,
-        contains('=== CALCULADORA (funções de lib/logica) ==='),
-      );
+      expect(sessao.saida, contains('  CALCULADORA (funções de lib/logica)\n'));
       expect(sessao.saida, contains('Volume de calda: 66,00 L'));
       expect(sessao.saida, contains('Até logo!'));
       expect(sessao.respostasRestantes, 0);
@@ -706,7 +809,7 @@ void main() {
   group('reaplicação e imprevistos', () {
     // Só a tela de detalhes (a do registro também fala em REAPLICAR).
     String detalhes(String saida) {
-      return saida.substring(saida.indexOf('=== APLICAÇÃO 1 ==='));
+      return saida.substring(saida.indexOf('  APLICAÇÃO 1\n'));
     }
 
     test('chuva antes do limite: os detalhes avisam para reaplicar', () async {
@@ -925,7 +1028,7 @@ void main() {
         '0',
       ], repositorios: repos);
       final saida = sessao.saida;
-      final tela = saida.substring(saida.indexOf('=== APLICAÇÕES A REAPLICAR'));
+      final tela = saida.substring(saida.indexOf('  APLICAÇÕES A REAPLICAR'));
       expect(tela, contains('[1] '));
       expect(tela, contains('[2] '));
       expect(tela, isNot(contains('[3] ')));

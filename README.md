@@ -193,7 +193,7 @@ Quem conhece quem:
 | Arquivo | Papel |
 |---|---|
 | `terminal.dart` | `Terminal`: a entrada e a saída de texto, como interface. `TerminalConsole` usa o teclado e a tela; os testes usam um terminal com respostas prontas. |
-| `interacao.dart` | `Interacao`: as perguntas (texto, número, data, sim ou não), as listas de escolha e o laço do menu. Se a resposta não serve, pergunta de novo; se o sistema recusa a operação, mostra o erro e o menu continua. |
+| `interacao.dart` | `Interacao`: as perguntas (texto, número, data, sim ou não), as listas de escolha, o laço do menu e a aparência da tela (títulos, passos, `[ok]` e `[!]`, pausa com Enter). Se a resposta não serve, pergunta de novo; se o sistema recusa a operação, mostra o erro e o menu continua. |
 | `leitura.dart` | Transforma o que foi digitado em número (vírgula ou ponto), data (dia/mês/ano) e lista de ids. |
 | `formato.dart` | Número com vírgula, data e os textos das decisões da lógica (chuva, sobredose, capacidade e viagens). |
 | `menu_caderno.dart` | `MenuCaderno`: o menu principal. Cadastra pelos models e repositórios, registra aplicação pelo `AplicacaoService`, lista e resume. |
@@ -347,6 +347,7 @@ Requer Dart SDK 3.13 ou mais novo (conforme `pubspec.yaml`).
 dart pub get                    # baixa as dependências
 dart run bin/caderno.dart          # menu interativo, dados em memória
 dart run bin/caderno.dart --mysql  # o mesmo menu, lendo e gravando no MySQL (veja abaixo)
+dart run bin/caderno.dart --sem-pausa  # o menu sem o "Aperte Enter" depois de cada opção
 dart run bin/main.dart             # demonstração no terminal, dados em memória
 dart run bin/main.dart --mysql     # a mesma demonstração, gravando no MySQL
 dart test                       # todos os testes (os de banco são pulados sem DB_HOST)
@@ -367,6 +368,14 @@ A demonstração e o menu em memória **não precisam de banco nem de variáveis
 `dart run bin/caderno.dart` abre o menu. Digite o número da opção e Enter. Em qualquer
 pergunta, Enter sem escrever nada cancela a operação (ou pula um campo opcional). Os números
 aceitam vírgula ou ponto (`2,8`) e as datas são dia/mês/ano.
+
+A tela é só texto, sem cores, e foi pensada para ler com calma: cada menu e cada resultado
+têm um título em moldura e espaço entre os blocos; o registro de uma aplicação mostra em que
+passo você está ("Passo 3 de 6 - Talhões"); o que deu certo vem marcado com `[ok]` e o que
+não foi feito ou pede atenção, com `[!]`. Depois de cada opção o programa espera um Enter
+("Aperte Enter para voltar ao menu...") para o resultado não sumir quando o menu aparece de
+novo. Essa pausa só existe com o teclado ligado: com as respostas vindas de um arquivo ou de
+um pipe, e com `--sem-pausa`, ela não acontece.
 
 | Opção | O que faz |
 |---|---|

@@ -125,8 +125,8 @@ void main() {
       ], Repositorios.memoria());
       expect(sessao.saida, contains('8. Corrigir um registro'));
       expect(sessao.saida, contains('9. Excluir um registro'));
-      expect(sessao.saida, contains('=== CORRIGIR UM REGISTRO ==='));
-      expect(sessao.saida, contains('=== EXCLUIR UM REGISTRO ==='));
+      expect(sessao.saida, contains('  CORRIGIR UM REGISTRO\n'));
+      expect(sessao.saida, contains('  EXCLUIR UM REGISTRO\n'));
       expect(sessao.respostasRestantes, 0);
     });
 
@@ -444,7 +444,7 @@ void main() {
     test('mostra a aplicação e explica o que não muda', () async {
       final repos = await _comAplicacao();
       final sessao = await _corrigir(repos, '6', ['1']);
-      expect(sessao.saida, contains('=== APLICAÇÃO 1 ==='));
+      expect(sessao.saida, contains('  APLICAÇÃO 1\n'));
       expect(sessao.saida, contains('Aqui dá para mudar a data'));
       expect(sessao.saida, contains('exclua a aplicação e registre outra'));
     });

@@ -13,10 +13,12 @@ import '../ajuda/terminal_simulado.dart';
 void main() {
   var terminal = TerminalSimulado([]);
 
-  Interacao conversar(List<String> respostas) {
+  Interacao conversar(List<String> respostas, {bool pausas = false}) {
     terminal = TerminalSimulado(respostas);
-    return Interacao(terminal);
+    return Interacao(terminal, pausas: pausas);
   }
+
+  int quantasVezes(String trecho) => trecho.allMatches(terminal.saida).length;
 
   group('perguntar', () {
     test('escreve o rótulo e devolve a resposta sem espaços nas pontas', () {
@@ -393,7 +395,7 @@ void main() {
         }),
       ]);
       expect(chamadas, 2);
-      expect(terminal.saida, contains('=== TESTE ==='));
+      expect(terminal.saida, contains('  TESTE\n'));
       expect(terminal.saida, contains('  1. Primeira'));
       expect(terminal.saida, contains('  0. Voltar'));
     });
@@ -417,6 +419,14 @@ void main() {
       expect(terminal.saida, contains('Opção inválida.'));
     });
 
+    test('opção inválida só pergunta de novo, sem redesenhar o menu', () async {
+      final ui = conversar(['9', 'x', '0']);
+      await ui.menu('TESTE', [OpcaoMenu('Primeira', () async {})]);
+      expect(quantasVezes('Opção inválida.'), 2);
+      expect(quantasVezes('  TESTE\n'), 1);
+      expect(terminal.respostasRestantes, 0);
+    });
+
     test('um erro na opção aparece e o menu continua', () async {
       final ui = conversar(['1', '0']);
       await ui.menu('TESTE', [
@@ -426,6 +436,168 @@ void main() {
       ]);
       expect(terminal.saida, contains('Dado inválido: taxa'));
       expect(terminal.respostasRestantes, 0);
+    });
+  });
+
+  group('menu com pausas', () {
+    test('espera um Enter depois da opção, antes de mostrar o menu', () async {
+      var chamadas = 0;
+      final ui = conversar(['1', '', '0'], pausas: true);
+      await ui.menu('TESTE', [
+        OpcaoMenu('Primeira', () async {
+          chamadas++;
+        }),
+      ]);
+      expect(chamadas, 1);
+      expect(quantasVezes('Aperte Enter para voltar ao menu...'), 1);
+      expect(terminal.respostasRestantes, 0);
+    });
+
+    test('a pausa vem antes de o menu ser desenhado de novo', () async {
+      final ui = conversar(['1', '', '0'], pausas: true);
+      await ui.menu('TESTE', [
+        OpcaoMenu('Primeira', () async {
+          ui.linha('resultado');
+        }),
+      ]);
+      final saida = terminal.saida;
+      final resultado = saida.indexOf('resultado');
+      final pausa = saida.indexOf('Aperte Enter');
+      final segundoMenu = saida.lastIndexOf('  TESTE\n');
+      expect(resultado < pausa, isTrue);
+      expect(pausa < segundoMenu, isTrue);
+    });
+
+    test('sair com 0 não pede Enter', () async {
+      final ui = conversar(['0'], pausas: true);
+      await ui.menu('TESTE', [OpcaoMenu('Primeira', () async {})]);
+      expect(terminal.saida, isNot(contains('Aperte Enter')));
+    });
+
+    test('opção inválida não pede Enter', () async {
+      final ui = conversar(['9', '0'], pausas: true);
+      await ui.menu('TESTE', [OpcaoMenu('Primeira', () async {})]);
+      expect(terminal.saida, isNot(contains('Aperte Enter')));
+    });
+
+    test('opção que abre outro menu não pede Enter ao voltar', () async {
+      late final Interacao ui;
+      ui = conversar(['1', '1', '', '0', '0'], pausas: true);
+      await ui.menu('FORA', [
+        OpcaoMenu('Abrir', () {
+          return ui.menu('DENTRO', [OpcaoMenu('Fazer', () async {})]);
+        }),
+      ]);
+      expect(quantasVezes('Aperte Enter'), 1);
+      expect(terminal.respostasRestantes, 0);
+    });
+
+    test('um erro na opção aparece e depois espera o Enter', () async {
+      final ui = conversar(['1', '', '0'], pausas: true);
+      await ui.menu('TESTE', [
+        OpcaoMenu('Quebra', () async {
+          throw DadoInvalidoException('taxa', 'deve ser maior que zero');
+        }),
+      ]);
+      expect(terminal.saida, contains('Dado inválido: taxa'));
+      expect(quantasVezes('Aperte Enter'), 1);
+    });
+
+    test('sem pausas, que é o padrão, ninguém precisa apertar Enter', () async {
+      final ui = conversar(['1', '0']);
+      await ui.menu('TESTE', [OpcaoMenu('Primeira', () async {})]);
+      expect(terminal.saida, isNot(contains('Aperte Enter')));
+      expect(terminal.respostasRestantes, 0);
+    });
+
+    test('se a entrada acaba na pausa, a conversa se encerra', () async {
+      final ui = conversar(['1'], pausas: true);
+      var encerrou = false;
+      try {
+        await ui.menu('TESTE', [OpcaoMenu('Primeira', () async {})]);
+      } on EntradaEncerrada {
+        encerrou = true;
+      }
+      expect(encerrou, isTrue);
+    });
+  });
+
+  group('aparência', () {
+    test('secao desenha o título numa moldura, com folga em volta', () {
+      final ui = conversar([]);
+      ui.secao('TESTE');
+      expect(terminal.saida, '\n${'=' * 50}\n  TESTE\n${'=' * 50}\n\n');
+    });
+
+    test('secao com título comprido alarga a moldura', () {
+      final ui = conversar([]);
+      final titulo = 'T' * 60;
+      ui.secao(titulo);
+      expect(terminal.saida, contains('${'=' * 66}\n  $titulo\n'));
+    });
+
+    test('linhas em branco seguidas viram uma só', () {
+      final ui = conversar([]);
+      ui.linha('a');
+      ui.linha();
+      ui.linha();
+      ui.linha('');
+      ui.linha('b');
+      expect(terminal.saida, 'a\n\nb\n');
+    });
+
+    test('a linha em branco depois de uma pergunta não é descartada', () {
+      final ui = conversar(['']);
+      ui.perguntar('Nome');
+      ui.linha();
+      ui.linha('fim');
+      expect(terminal.saida, 'Nome: \n\nfim\n');
+    });
+
+    test('secao logo depois de outra linha em branco não dobra o espaço', () {
+      final ui = conversar([]);
+      ui.linha();
+      ui.secao('TESTE');
+      expect(terminal.saida.startsWith('\n=='), isTrue);
+    });
+
+    test('subtitulo sublinha com o tamanho do texto', () {
+      final ui = conversar([]);
+      ui.subtitulo('Insumos');
+      expect(terminal.saida, '\nInsumos\n-------\n');
+    });
+
+    test('etapa mostra em que passo o usuário está', () {
+      final ui = conversar([]);
+      ui.etapa(2, 6, 'Aplicador');
+      expect(terminal.saida, contains('Passo 2 de 6 - Aplicador\n'));
+      expect(terminal.saida, contains('------------------------\n'));
+    });
+
+    test('sucesso e aviso vêm marcados e separados do resto', () {
+      final ui = conversar([]);
+      ui.linha('antes');
+      ui.sucesso('Feito.');
+      ui.aviso('Cuidado.');
+      expect(terminal.saida, 'antes\n\n  [ok] Feito.\n\n  [!] Cuidado.\n');
+    });
+
+    test('pausar espera o Enter', () {
+      final ui = conversar(['']);
+      ui.pausar();
+      expect(terminal.saida, contains('Aperte Enter para continuar... '));
+      expect(terminal.respostasRestantes, 0);
+    });
+
+    test('pausar lança EntradaEncerrada se a entrada acabou', () {
+      final ui = conversar([]);
+      var encerrou = false;
+      try {
+        ui.pausar();
+      } on EntradaEncerrada {
+        encerrou = true;
+      }
+      expect(encerrou, isTrue);
     });
   });
 
