@@ -75,4 +75,21 @@ abstract class Aplicador extends Entidade {
   static String _numero(double valor) => valor == valor.truncateToDouble()
       ? valor.toInt().toString()
       : valor.toString();
+
+  /// Nome para mostrar nas listas: o [rotulo] do tipo (ex.: `Drone`) seguido do
+  /// modelo ou, se não houver modelo, do id.
+  ///
+  /// Não repete o [rotulo] quando o modelo já começa com ele. No banco os
+  /// modelos vêm como `Drone DJI` e `Bomba costal Jacto 1`: o nome continua
+  /// `Drone DJI`, e não `Drone Drone DJI`.
+  String nomeComRotulo(String rotulo) {
+    final identificacao = modelo ?? id?.toString();
+    if (identificacao == null) {
+      return rotulo;
+    }
+    final texto = identificacao.toLowerCase();
+    final inicio = rotulo.toLowerCase();
+    final jaTemRotulo = texto == inicio || texto.startsWith('$inicio ');
+    return jaTemRotulo ? identificacao : '$rotulo $identificacao';
+  }
 }

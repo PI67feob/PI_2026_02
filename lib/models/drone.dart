@@ -15,7 +15,7 @@ class Drone extends Aplicador {
 
   @override
   String descreverCapacidade() {
-    final nome = (modelo ?? id) != null ? 'Drone ${modelo ?? id}' : 'Drone';
+    final nome = nomeComRotulo('Drone');
     final temCapacidade =
         capacidadeMaximaL != null || capacidadeMaximaKg != null;
     return temCapacidade

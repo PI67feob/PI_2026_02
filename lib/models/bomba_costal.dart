@@ -15,9 +15,7 @@ class BombaCostal extends Aplicador {
 
   @override
   String descreverCapacidade() {
-    final nome = (modelo ?? id) != null
-        ? 'Bomba costal ${modelo ?? id}'
-        : 'Bomba costal';
+    final nome = nomeComRotulo('Bomba costal');
     final temCapacidade =
         capacidadeMaximaL != null || capacidadeMaximaKg != null;
     return temCapacidade
