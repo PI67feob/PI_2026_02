@@ -15,7 +15,7 @@ class Trator extends Aplicador {
 
   @override
   String descreverCapacidade() {
-    final nome = (modelo ?? id) != null ? 'Trator ${modelo ?? id}' : 'Trator';
+    final nome = nomeComRotulo('Trator');
     final temCapacidade =
         capacidadeMaximaL != null || capacidadeMaximaKg != null;
     return temCapacidade

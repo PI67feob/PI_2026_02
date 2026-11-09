@@ -130,6 +130,36 @@ void main() {
         'Bomba costal: reservatório com capacidade não informada nas costas do operador',
       );
     });
+
+    test('modelo que ja comeca com o tipo nao repete o tipo no nome', () {
+      // No banco os modelos vem como "Drone DJI" e "Bomba costal Jacto 4".
+      expect(
+        Drone(modelo: 'Drone DJI', capacidadeMaximaL: 70).descreverCapacidade(),
+        'Drone DJI: até 70 L por voo',
+      );
+      expect(
+        BombaCostal(
+          modelo: 'Bomba costal Jacto 4',
+          capacidadeMaximaL: 20,
+        ).descreverCapacidade(),
+        'Bomba costal Jacto 4: reservatório de até 20 L nas costas do operador',
+      );
+      expect(
+        Trator(modelo: 'trator Valtra').descreverCapacidade(),
+        'trator Valtra: compartimento com capacidade não informada',
+      );
+    });
+
+    test('so deixa de repetir o tipo quando a palavra e inteira', () {
+      expect(
+        Drone(modelo: 'Dronezinho').descreverCapacidade(),
+        'Drone Dronezinho: capacidade não informada por voo',
+      );
+      expect(
+        Drone(modelo: 'Drone').descreverCapacidade(),
+        'Drone: capacidade não informada por voo',
+      );
+    });
   });
 
   group('validacoes', () {
