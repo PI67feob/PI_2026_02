@@ -60,6 +60,17 @@
 - Banco: `aplicacao` ganha as colunas `horas_ate_chuva` e `motivo_reaplicacao` (o
   `ALTER TABLE` está em `banco/RESERVADO_PARA_SQL.md` e precisa rodar antes de usar
   `--mysql` com esta versão). É por elas que o BI conta as reaplicações.
+- Banco (PI-012, PI-017, PI-018): os scripts SQL da frente de Modelagem de Dados passam a
+  ficar no repositório, em `banco/`: `schema.sql` (11 tabelas), `triggers.sql` (14 triggers
+  de auditoria), `alter_aplicacao_reaplicacao.sql`, `seeds/` (base do Diogo) e
+  `povoamento/` (dados reais e fictícios de teste, `corrigir_ids.sql` e os scripts para
+  desfazer). Também entram `recriar_do_zero/tudo_em_um.sql`, `testes/` (conferência,
+  auditoria e usuário local) e `validacao/validar_cadeia.sh`, que roda a cadeia inteira num
+  MySQL local descartável e confere os resultados. O `banco/README.md` explica a ordem de
+  execução e o porquê de cada script; o detalhe está em `docs/banco/porque_de_cada_script.md`.
+- `tool/aplicar_sql.dart`: executa um arquivo `.sql` no MySQL da AWS, comando por comando,
+  conectando como administrador (senha pedida no terminal, sem eco). Entende `DELIMITER` e
+  recusa `DROP DATABASE` sem `--permitir-drop-database`.
 
 ### Alterado
 
@@ -107,6 +118,9 @@
   desliga a espera, e com as respostas vindas de arquivo ou pipe ela não acontece. Uma opção
   inválida só pergunta de novo, sem desenhar o menu outra vez. Os testes que procuravam
   `=== TÍTULO ===` passaram a procurar o título na moldura.
+- `README.md` e `banco/RESERVADO_PARA_SQL.md`: o SQL deixa de ser "reservado" (só o
+  `roles.sql`, da PI-014, continua pendente) e a estrutura do repositório passa a mostrar
+  `banco/` e `tool/`.
 
 ### Corrigido
 

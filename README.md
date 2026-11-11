@@ -103,8 +103,17 @@ Quem conhece quem:
 │   │   └── repositorios.dart   os seis repositórios montados (memória ou MySQL)
 │   └── services/               casos de uso: juntam models, lógica e repositórios
 ├── test/                       espelha a estrutura de lib/
-├── banco/                      SQL (reservado; ver banco/RESERVADO_PARA_SQL.md)
-│   └── seeds/                  carga inicial
+├── tool/
+│   └── aplicar_sql.dart        roda um arquivo .sql no MySQL da AWS, comando por comando
+├── banco/                      SQL do banco (ver banco/README.md)
+│   ├── schema.sql              as 11 tabelas (cria o banco do zero)
+│   ├── triggers.sql            os 14 triggers de auditoria
+│   ├── alter_aplicacao_reaplicacao.sql   as 2 colunas da reaplicação
+│   ├── seeds/                  carga inicial (base do Diogo)
+│   ├── povoamento/             dados reais e fictícios de teste, corrigir_ids, desfazer
+│   ├── recriar_do_zero/        tudo_em_um.sql
+│   ├── testes/                 conferência, auditoria e usuário local
+│   └── validacao/              validar_cadeia.sh: confere tudo num MySQL local descartável
 ├── bi/                         Power BI
 │   ├── queries/
 │   └── documentacao/
@@ -446,11 +455,11 @@ banco real:
    lê. **Nenhuma senha fica no código** e o `.env` está no `.gitignore`.
 5. **Reaplicação.** A tabela `aplicacao` precisa de duas colunas, `horas_ate_chuva` e
    `motivo_reaplicacao`, que o Power BI usa para contar as reaplicações por imprevisto. O
-   `ALTER TABLE` está em `banco/RESERVADO_PARA_SQL.md` e precisa rodar **antes** de usar
-   `--mysql` com esta versão.
-6. **Pasta de SQL.** `banco/` receberá `schema.sql`, `roles.sql`, `seeds/` e
-   `triggers.sql`. O banco da AWS já tem as tabelas e os triggers, mas esses arquivos
-   ainda precisam ser versionados aqui.
+   `ALTER TABLE` está em `banco/alter_aplicacao_reaplicacao.sql` e precisa rodar **antes** de
+   usar `--mysql` com esta versão.
+6. **Pasta de SQL.** `banco/` tem o `schema.sql`, o `triggers.sql`, o
+   `alter_aplicacao_reaplicacao.sql`, as `seeds/` e o `povoamento/`; o `banco/README.md`
+   explica a ordem de execução e o porquê de cada script. Falta só o `roles.sql` (PI-014).
 
 O mapa entre tabelas, classes e repositórios, as regras que o repositório MySQL precisa
 respeitar (como gravar a aplicação em **transação**) e os pontos de atenção para o DBA
@@ -507,9 +516,8 @@ Perguntas que podem aparecer:
   usam `caderno_fazenda` e `id_<tabela>`. O grupo precisa escolher um padrão. Hoje o
   repositório MySQL segue o do banco (`caderno_fazenda`, `id_<tabela>`); se o padrão mudar,
   só `lib/repositories/mysql/` precisa ser ajustado.
-- **Scripts do banco no repositório:** o banco da AWS já tem as tabelas e os triggers
-  (PI-012 e PI-018), mas `schema.sql`, `roles.sql`, seeds e `triggers.sql` (PI-012, PI-014,
-  PI-017 e PI-018) ainda precisam ser versionados em `banco/`.
+- **Scripts do banco no repositório:** `schema.sql`, `triggers.sql`, seeds e povoamento
+  (PI-012, PI-017 e PI-018) estão versionados em `banco/`. Falta o `roles.sql` (PI-014).
 - **Entidades sem classe Dart:** compra, item de compra e histórico de alterações
   (o histórico é gerado por triggers).
 - **Arquivos de modelo do `dart create`** (`bin/pi.dart`, `lib/pi.dart`, `test/pi_test.dart`)

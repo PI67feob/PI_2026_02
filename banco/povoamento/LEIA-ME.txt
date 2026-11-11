@@ -1,0 +1,220 @@
+PACOTE DE POVOAMENTO - Caderno de Campo (banco caderno_fazenda)   [versao 7]
+=======================================================================
+
+Os 10 exemplos da apresentacao sao para CADASTRAR NO TERMINAL, no proprio programa:
+    dart run bin/caderno.dart --mysql
+O arquivo exemplos_para_o_terminal.txt traz as respostas de cada exemplo, uma pergunta por
+linha, para deixar aberto ao lado do terminal. O mesmo roteiro, com tabela e o que aparece
+na tela, esta no documento "Roteiro de cadastro para a apresentacao - Caderno de Campo".
+Os arquivos .sql de exemplos sao so o plano B.
+
+
+O que tem aqui
+--------------
+1. povoamento_caderno_de_campo.sql  Dados REAIS (mapas e planilha da auditoria) + dados
+                                    FICTICIOS para a demonstracao. RODE ESTE PRIMEIRO, no
+                                    Workbench. Se o banco ainda NAO tiver a base do Diogo
+                                    (areas, talhoes da Sede, aplicadores, insumos, compras),
+                                    o proprio script cria essa base (veja "Banco sem a base").
+2. corrigir_ids.sql                NOVO. Conserta a numeracao (ids) das aplicacoes: renumera para
+                                    1, 2, 3... sem buracos e acerta o proximo numero de cada tabela.
+                                    Rode com o usuario do Diogo (precisa de ALTER). Veja a secao
+                                    "Numeracao (ids) das aplicacoes" mais abaixo.
+3. exemplos_para_o_terminal.txt     Os 10 exemplos para digitar no programa (terminal).
+4. exemplos_apresentacao.sql        Plano B, so se o programa falhar ao vivo: os mesmos 10
+                                    em SQL, um bloco por vez. No topo tem uma VERIFICACAO e,
+                                    cada bloco confere o proprio resultado (OK ou ERRO).
+5. apagar_so_os_exemplos.sql        Apaga so os 10 exemplos [DEMO #nn]. Use para ensaiar e
+                                    repetir; o historico de aplicacoes continua.
+6. desfazer_dados_ficticios.sql     Apaga os exemplos E todos os dados ficticios. Nao mexe
+                                    nos dados reais nem na base do Diogo.
+7. diagnostico_banco.sql            So LEITURA. Mostra o que o banco tem de verdade (nomes,
+                                    colunas, permissoes). Se algo der errado, rode e mande o
+                                    resultado para mim.
+8. criar_tabela_controle.sql        So se o seu usuario nao tiver permissao de CREATE e a tabela de
+                                    controle ainda nao existir: o DBA (Diogo) roda uma vez e depois
+                                    voce roda o povoamento.
+9. auditoria_dados_reais.sql        OPCIONAL. Cria 7 tabelas novas aud_* com dados da
+                                    auditoria. Combine com o Diogo (DBA) antes de rodar.
+
+
+Ordem
+-----
+1) No Workbench, conecte com o SEU usuario (senha nunca vai em arquivo .sql), abra o
+   povoamento_caderno_de_campo.sql e clique no raio (Execute All). Ele mostra uma tabela de
+   resultado em cada etapa:
+   a) VERIFICACAO PREVIA (so leitura): confere o que o banco tem (colunas, operacoes, areas,
+      talhoes da Sede, aplicadores, insumos). Tem de terminar em PODE SEGUIR.
+      - Linha CRIAR e normal: o banco ainda nao tem aquilo e o script cria (a comparacao ignora
+        maiusculas e acentos, como o programa). Num banco que so tem as tabelas, as 5 linhas
+        (operacoes, areas, talhoes da Sede, aplicadores, insumos) dizem CRIAR.
+      - Linha FALTA: o script PARA DE PROPOSITO, antes de gravar qualquer coisa, com o erro
+        1064 "...near 'PARE: faltam ...'" (e diz quantas coisas faltam de cada tipo). Isso nao e
+        bug: e o aviso. Acontece quando falta so PARTE de um grupo (por exemplo 13 dos 15
+        insumos: alguem renomeou ou apagou algo e o script nao adivinha), quando falta uma coluna
+        ou quando existe nome repetido (por exemplo duas areas "Sede"). Abra a aba da tabela da
+        verificacao (a primeira aba de resultado, colunas "faltando" e "no_banco") e mande o print
+        para mim.
+   b) Grava tudo dentro de uma transacao e CONFERE o resultado antes de confirmar: todas as
+      linhas da conferencia (item / encontrado / esperado / status) em OK e a mensagem
+      "CARGA COMPLETA". Se alguma linha ficar DIFERENTE, o proprio script desfaz tudo
+      (ROLLBACK) e diz "CARGA INCOMPLETA: NADA foi gravado". Nunca fica pela metade.
+   c) No fim mostra o banco usado e o total de aplicacoes, os hectares por area e os NUMEROS
+      PARA DIGITAR NO TERMINAL (10 linhas OK), calculados no seu banco.
+   - Pode rodar de novo: o script nao duplica nada.
+   - Se aparecer outro ERRO no meio (por exemplo "command denied"), rode  ROLLBACK;  e leve a
+     mensagem para o grupo.
+   - Depois, para contar as linhas, confira em que banco voce esta: rode  USE caderno_fazenda;
+     (ou  SELECT COUNT(*) FROM caderno_fazenda.aplicacao;). Contar no schema errado da 0 mesmo
+     com a carga completa. O resultado "CARGA COMPLETA" mostra o banco usado e o total de
+     aplicacoes (70, se o banco ainda nao tinha nenhuma).
+   - Permissoes: o script usa so SELECT, INSERT e UPDATE (NAO usa tabela temporaria, entao nao
+     precisa de CREATE TEMPORARY TABLES). CREATE so e usado se a tabela de controle ainda nao
+     existir, e ALTER so se faltarem as colunas de reaplicacao. Logo depois da verificacao previa
+     ele testa as permissoes com comandos que NAO gravam nada: se faltar alguma, para com
+     "command denied" ANTES de gravar. Nesse caso rode o arquivo com o usuario do Diogo (ou peca
+     para ele rodar antes o criar_tabela_controle.sql e o alter_aplicacao_reaplicacao.sql dele).
+   - Alguns programas (por exemplo a extensao MySQL Shell do VS Code) continuam rodando o resto
+     do script depois de um erro. O povoamento se protege: ao parar, deixa a sessao em modo
+     so-leitura, entao nada e gravado mesmo que o programa continue.
+1b) Numeros (ids) das aplicacoes pulados? (comecam no 3, ou a aplicacao nova recebe um numero
+   muito maior que o total): rode corrigir_ids.sql, com o usuario do Diogo, sem ninguem usando
+   o programa. Pode rodar quantas vezes quiser; se ja estiver certo, nao troca nada.
+2) (Opcional) auditoria_dados_reais.sql, so depois de combinar com o Diogo.
+3) Ensaio e apresentacao: no terminal, siga o exemplos_para_o_terminal.txt. Para limpar so
+   os exemplos depois de ensaiar, rode apagar_so_os_exemplos.sql no Workbench e, ANTES de
+   apresentar, rode o corrigir_ids.sql de novo (o numero das aplicacoes apagadas nao volta
+   sozinho; sem isso a primeira aplicacao cadastrada ao vivo pula alguns numeros). Se o
+   programa falhar ao vivo, use o exemplos_apresentacao.sql (um bloco por vez).
+4) Depois da apresentacao: desfazer_dados_ficticios.sql (e, se quiser fechar os buracos de
+   numeracao, o corrigir_ids.sql).
+
+
+Numeracao (ids) das aplicacoes - por que pulava e como corrigir
+----------------------------------------------------------------
+Sintoma: as aplicacoes comecavam no numero 3 (e nao no 1) e a aplicacao cadastrada pelo terminal
+recebia um numero muito maior (136, por exemplo), pulando dezenas.
+Causa: o numero de cada cadastro e dado pelo MySQL (contador AUTO_INCREMENT da tabela); o programa
+so mostra o que o MySQL devolve (lib/repositories/mysql/ajuda_mysql.dart, funcao inserirLinha).
+O contador so anda para a frente: numero de linha apagada ou de insercao desfeita nao volta (por
+isso comecava no 3) e, quando um unico INSERT ... SELECT grava varias linhas, o MySQL reserva os
+numeros em blocos (1, 2, 4, 8...) e perde o que sobra do ultimo bloco: as 70 aplicacoes do
+povoamento antigo gastavam 127 numeros.
+O que mudou nesta versao:
+  - povoamento_caderno_de_campo.sql: as 70 aplicacoes entram com os numeros em sequencia (1 a 70
+    num banco sem aplicacoes) e a proxima aplicacao cadastrada no terminal recebe o 71.
+  - corrigir_ids.sql (NOVO): para o banco que ja esta com numeros pulados (o da AWS da equipe).
+    Renumera as aplicacoes para 1, 2, 3... na MESMA ordem de hoje (os talhoes, insumos e doses de
+    cada uma vao junto) e acerta o proximo numero de cada tabela para (maior id + 1).
+Como usar o corrigir_ids.sql:
+  1) No Workbench, conecte com o usuario do Diogo. O script usa ALTER TABLE; o usuario comum para
+     logo no inicio, no teste de permissao ("ALTER command denied"), SEM ter mudado nada.
+  2) Ninguem pode estar usando o programa nessa hora. Abra o arquivo e clique no raio.
+  3) Confira as abas, de cima para baixo: ANTES (menor e maior id e "proximo id" de cada tabela),
+     CONFERENCIA (todas as linhas OK), o resultado "NUMERACAO CORRIGIDA" e DEPOIS (tudo OK; o
+     proximo id de aplicacao = maior id + 1).
+  4) Pode rodar de novo quando quiser: se ja estiver tudo certo ele diz "NUMERACAO JA ESTAVA
+     CERTA" e nao troca nada.
+  - Se qualquer linha da conferencia diferir (quantidades, conteudo de cada aplicacao, nenhuma
+    linha solta), o proprio script faz ROLLBACK e nada muda. Se parar por outro erro no meio,
+    rode  ROLLBACK;  e depois  SET FOREIGN_KEY_CHECKS = 1;  (ou simplesmente rode o arquivo de
+    novo: ele desfaz o que tiver ficado aberto).
+  - O script tambem para, antes de gravar, se achar outra tabela ligada a aplicacao ou linha de
+    talhao/insumo sem aplicacao.
+  - Ele registra no historico_alteracoes uma linha UPDATE para cada id trocado (a aplicacao e cada
+    talhao e insumo dela): 531 linhas para 77 aplicacoes. E esperado: o historico nao deixa apagar.
+  - Quando rodar: depois do povoamento, se o banco veio da versao antiga; depois de apagar os
+    exemplos ou os dados ficticios; e antes de apresentar. Numero apagado nunca volta sozinho (e
+    assim que o MySQL funciona); este script e o jeito de fechar o buraco.
+  - Os numeros das APLICACOES mudam: se alguem anotou "aplicacao 72", confira de novo na lista do
+    terminal. Os numeros de insumo, aplicador, talhao e operacao NAO mudam (os exemplos do
+    terminal continuam valendo).
+
+
+Banco sem a base do Diogo (o caso do banco da AWS da equipe)
+------------------------------------------------------------
+O banco da equipe tinha as tabelas e os gatilhos, mas nenhuma linha-base: nem areas, nem
+talhoes da Sede, nem aplicadores, nem insumos. Por isso as versoes anteriores paravam com
+"PARE: faltam areas: 4, talhoes: 5, aplicadores: 8, insumos: 15". Agora o povoamento cria essa
+base sozinho, SO quando o grupo inteiro esta faltando (nunca apaga nem duplica o que existe):
+  - 4 areas (Sede, Bela Vista, Corujas, Serra II) e 5 talhoes da Sede (19,95 ha)
+  - 2 operacoes (Adubacao, Pulverizacao)
+  - 11 aplicadores (drone e bombas costais) e 43 insumos reais
+  - 18 compras reais com 43 itens
+Os dados vem dos seeds 01, 02 e 03 do "banco do zero" do Diogo, copiados no script, e saem com
+os MESMOS ids do banco dele (quando a tabela esta vazia). Atencao: o seed 01 do pacote dele se
+chama 01_base_RECONSTRUIDO e e PROVISORIO (o 01_base.sql oficial do Bruno nunca chegou ao
+Diogo): quando o Bruno mandar o oficial, compare com os nomes e valores que o povoamento criou.
+  - Se a base ja existe (inteira), o script nao cria nada: nenhuma linha CRIAR.
+  - Se existe so parte (por exemplo so a area Sede, ou 13 de 15 insumos), o tratamento depende
+    do grupo: areas e operacoes que faltam sao criadas; talhoes da Sede, aplicadores e insumos
+    so sao criados quando o grupo todo falta e, no caso da Sede, quando ela nao tem talhao
+    nenhum. Nos outros casos o script PARA e mostra a tabela.
+  - CUIDADO: depois do povoamento NAO rode por cima os seeds 01, 02 e 03 do Diogo, nem o
+    tudo_em_um.sql nem o criar_banco.sql dele (esses dois APAGAM o banco inteiro e recriam).
+    A tabela area nao tem chave unica por nome, entao rodar o seed de novo duplicaria as areas
+    (o povoamento avisa "repetidos" e para). Combine com o Diogo e o Bruno antes, para ninguem
+    rodar a base duas vezes.
+  - O desfazer_dados_ficticios.sql NAO apaga essa base: ela e cadastro, nao dado ficticio.
+Numeros esperados num banco que so tinha as tabelas: area +4, talhao +29 (5 da Sede + 24 dos
+mapas), operacao +2, aplicador +16 (11 da base + 5 ficticios), insumo +45 (43 + 2), compra +28
+(18 + 10), item_compra +69 (43 + 26), aplicacao +70, aplicacao_talhao +329, aplicacao_insumo +111.
+
+
+Como o ficticio fica identificado
+---------------------------------
+Os registros ficticios NAO levam etiqueta no texto: nome dos insumos, marca, observacao das
+aplicacoes e numero das notas de compra parecem os de um cadastro normal. Os ids ficam
+numa tabela de controle, registro_dados_ficticios, que o programa nao usa. E ela que o
+desfazer e as consultas do BI usam (coluna origem_dado).
+Unica etiqueta visivel que sobra: [DEMO #nn] no comeco da observacao dos 10 exemplos, que
+voce mesmo digita na apresentacao.
+
+Ja rodou a versao ANTERIOR do povoamento (a que gravava etiquetas no texto)?
+Nao precisa desfazer: rode o povoamento novo por cima. A etapa B0 troca o texto no mesmo
+registro (mesmos ids, nada duplica) e preenche a tabela de controle. Os exemplos [DEMO #nn]
+que ja estiverem cadastrados continuam la.
+Unico lugar onde o texto antigo ainda aparece: nos valores antigos guardados em
+historico_alteracoes (tabela que nao deixa apagar de proposito). So quem consultar essa
+tabela vai ver; nenhuma tela do programa nem consulta do BI usa esses valores.
+
+
+Por que a carga antiga dava "OK" e o banco ficava com 0 aplicacoes?
+-------------------------------------------------------------------
+O script liga os dados novos a coisas que o banco ja tem, pelo NOME (operacao, area, aplicador,
+insumo). Quando um nome nao existe, o MySQL nao da erro: o INSERT ... SELECT simplesmente grava
+0 linhas. No banco da equipe nao existiam nem as operacoes (o programa grava a operacao como
+texto livre) nem a base do Diogo. Agora a verificacao previa mostra isso antes de gravar, o script
+cria o que faltar (operacoes e a base, quando o grupo todo falta) e, para qualquer outro nome que
+falte, para e mostra o que o banco tem no lugar.
+
+
+Avisos
+------
+- NAO rode o seed 04 do DBA (voos de drone sem talhao e sem insumo) no banco que o programa
+  usa: o programa nao abre aplicacao sem talhao e insumo. Os voos estao na tabela opcional
+  aud_voo_drone. (Se existirem aplicacoes assim, a conferencia mostra uma linha ATENCAO: so
+  avisa, nao desfaz a carga.)
+- O povoamento grava cerca de 531 linhas em historico_alteracoes (os gatilhos de auditoria
+  registram cada insercao); se o banco estava sem a base do Diogo, mais 43 (os insumos dela
+  tambem passam pelos gatilhos): 574. A conversao da versao anterior grava cerca de 72. O
+  desfazer grava mais linhas ali, porque as exclusoes tambem sao registradas. O corrigir_ids.sql
+  grava uma linha UPDATE por id trocado (531 para 77 aplicacoes). Essa tabela nao deixa apagar de
+  proposito: o rastro continua depois do desfazer.
+- Para conferir os gatilhos de auditoria (tem de dar 14):
+    SELECT COUNT(1) FROM information_schema.triggers WHERE trigger_schema = 'caderno_fazenda';
+- As operacoes e a base do Diogo criadas pelo povoamento (se o banco nao tinha) NAO sao apagadas
+  pelo desfazer: sao vocabulario e cadastro do programa, nao dado ficticio.
+- Fictico = os ids da tabela de controle (70 aplicacoes, 10 compras, 5 aplicadores: 4
+  tratores com placa inventada e 1 drone com serie inventada, 2 insumos: NPK 20-05-20 e
+  Calcario dolomitico) + [DEMO #nn] (os 10 exemplos) + o tipo deduzido de 7 insumos.
+- Doses e precos sao plausiveis, mas NAO sao recomendacao agronomica. Mesmo sem etiqueta nos
+  dados, declare na apresentacao que sao dados sinteticos (decisao D4 do time).
+- Testado em MySQL 8.0.46 e 8.4.0, em bancos completos, so com as tabelas, com base parcial,
+  com cadastros do programa e com usuario de poucas permissoes. O corrigir_ids.sql foi testado
+  nas duas versoes num banco igual ao da equipe (ids 3 a 136, 77 aplicacoes), com buracos, sem
+  aplicacoes, so com o proximo numero alto, sem a tabela de controle, com usuario sem ALTER, com
+  usuario sem DELETE e com dados soltos (nesses dois ultimos casos ele para sem mudar nada).
+  Nao foi testado direto no RDS da equipe: se algo se comportar diferente la, mande o print da
+  primeira aba de resultado.
+- Nenhum arquivo deste pacote tem senha, usuario ou endereco do servidor.

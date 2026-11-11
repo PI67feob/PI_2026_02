@@ -4,7 +4,8 @@
 > Lógica **não escreve tabelas**. O repositório MySQL (PI-023) está pronto e
 > funciona no banco da AWS. Este arquivo diz onde o SQL entra, o que o código
 > espera dele e como as classes se ligam às tabelas. Os arquivos `.sql` do DBA
-> ainda precisam ser versionados em `banco/`.
+> já estão versionados em `banco/` (veja o `banco/README.md`); falta só o
+> `roles.sql` (PI-014).
 
 ## 1. O que existe hoje
 
@@ -21,18 +22,21 @@ negócio.
 | Leitura das variáveis de conexão | `lib/repositories/configuracao_banco.dart` | pronto |
 | Nomes das variáveis | `.env.example` | pronto (só nomes) |
 | Implementação MySQL | `lib/repositories/mysql/` | pronto (PI-023) |
-| `schema.sql` | `banco/schema.sql` | **reservado** (PI-012) |
-| `roles.sql` e `banco/README.md` | `banco/` | **reservados** (PI-014) |
-| Seeds (dados iniciais) | `banco/seeds/` | **reservada** (PI-017) |
-| Triggers de auditoria | `banco/triggers.sql` | **reservado** (PI-018) |
+| `schema.sql` | `banco/schema.sql` | pronto (PI-012) |
+| `banco/README.md` | `banco/README.md` | pronto |
+| `roles.sql` | `banco/roles.sql` | **reservado** (PI-014) |
+| Seeds (dados iniciais) | `banco/seeds/` | pronto (PI-017) |
+| Triggers de auditoria | `banco/triggers.sql` | pronto (PI-018) |
+| Colunas da reaplicação | `banco/alter_aplicacao_reaplicacao.sql` | pronto |
+| Povoamento de teste (dados reais e fictícios) | `banco/povoamento/` | pronto |
 
 O banco da AWS (`caderno_fazenda`) já tem as tabelas e os 14 triggers de
-auditoria. Falta só versionar os scripts nas pastas acima.
+auditoria, e os scripts que os criam estão em `banco/`. Falta só o `roles.sql`.
 
 ## 2. O que NÃO foi feito de propósito
 
-- Não há `CREATE TABLE`, nem `schema.sql` de rascunho. Um arquivo provisório
-  poderia ser confundido com o definitivo e brigar com o da PI-012.
+- O `banco/schema.sql` é o do DBA (Diogo Bordin, PI-012): a frente de POO não
+  escreve `CREATE TABLE` próprio.
 - Não há senha em nenhum arquivo versionado. O `.env` e qualquer `*.local.sql`
   (por exemplo `roles.local.sql`, a cópia do `roles.sql` com a senha real) estão no
   `.gitignore`.
@@ -104,8 +108,9 @@ O que o repositório MySQL faz para encaixar as classes nas tabelas do DBA:
   `vento` ou `outro`. NULL quer dizer que nada pede para refazer a aplicação. O BI agrupa por
   `motivo_reaplicacao` para contar as reaplicações por imprevisto, e `horas_ate_chuva` guarda
   a distância até a chuva. Quando a chuva vem antes do limite da fazenda e nenhum motivo é
-  informado, o programa grava `chuva` sozinho. O `ALTER TABLE` precisa rodar **antes** de
-  usar esta versão com `--mysql`:
+  informado, o programa grava `chuva` sozinho. O `ALTER TABLE` (o mesmo que está em
+  `banco/alter_aplicacao_reaplicacao.sql`) precisa rodar **antes** de usar esta versão com
+  `--mysql`:
 
   ```sql
   ALTER TABLE aplicacao
@@ -177,8 +182,8 @@ fora de 1 a 65535, e nunca imprime a senha.
 ## 6. Pontos de atenção para o DBA
 
 - **Conflito de nomes.** A PI-012 manda `schema agrogestor` e chave primária
-  `id`. Os scripts de seed recebidos (pasta `SQL FINALIZANDO`, ainda fora do
-  repositório) usam o banco `caderno_fazenda` e chaves `id_<tabela>`
+  `id`. Os scripts do banco, agora versionados em `banco/`, usam o banco
+  `caderno_fazenda` e chaves `id_<tabela>`
   (`id_area`, `id_talhao`...). Um dos dois padrões precisa ser escolhido pelo
   grupo. O repositório MySQL hoje segue o padrão do banco real; se o grupo
   escolher o outro, só `lib/repositories/mysql/` muda (o resto do código Dart não

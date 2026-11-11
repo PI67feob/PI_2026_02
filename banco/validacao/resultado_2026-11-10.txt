@@ -1,0 +1,119 @@
+Servidor de teste: 8.0.46-0ubuntu0.24.04.4   |   pacote: <pasta do pacote>
+
+######## T1  banco do zero: tudo_em_um.sql + testes/conferencia.sql
+   OK     tudo_em_um.sql terminou sem erro
+   OK     contagens (area talhao operacao aplicador insumo compra item_compra aplicacao ap_talhao ap_insumo historico)
+   OK     conferencia.sql: linhas OK
+   OK     conferencia.sql: linhas DIFERENTE
+   OK     14 triggers no schema
+   OK     collation do banco
+   OK     11 tabelas
+
+######## T2  alter_aplicacao_reaplicacao.sql
+   OK     ALTER terminou sem erro
+   OK     colunas novas em aplicacao
+   OK     ALTER rodado de novo NAO e repetivel (erro 3822: nome de CHECK duplicado)
+   OK     CHECK de motivo recusa valor fora da lista
+
+######## T3  testes/auditoria.sql (prova dos 12 triggers + imutabilidade) como administrador
+   OK     auditoria.sql terminou sem erro
+   OK     12 linhas de resumo (1 por tabela e acao), todas com o usuario conectado
+   OK     depois do ROLLBACK nao sobrou historico
+   OK     contadores ficam em 9002 (talhao 9003): o ROLLBACK nao devolve ids
+   OK     UPDATE no historico e recusado (1644)
+   OK     DELETE no historico e recusado (1644)
+
+######## T4  cenario do RDS: ids 1-2 queimados + povoamento v6 + 1 cadastro manual + corrigir_ids
+   OK     proximo id de aplicacao antes do povoamento
+   OK     povoamento v6 terminou sem erro
+   OK     resultado
+   OK     contagens
+   OK     ids das aplicacoes (min max qtd): comecam no 3
+   OK     proximo id depois do INSERT ... SELECT de 70 linhas (127 ids gastos)
+   OK     cadastro manual recebe o id 130 (pulo de 72 para 130)
+   OK     corrigir_ids terminou sem erro
+   OK     ids depois (min max qtd)
+   OK     proximo id depois
+   OK     linhas DIFERENTE/ERRO/VERIFICAR no relatorio
+   OK     resultado da conferencia
+   OK     2a execucao: sem erro
+   OK     2a execucao: nada a trocar
+   OK     2a execucao: historico nao cresceu
+
+######## T5  banco novo + povoamento v7 (ids em sequencia)
+   OK     povoamento v7 terminou sem erro
+   OK     resultado
+   OK     contagens
+   OK     ids (min max qtd)
+   OK     proximo id
+   OK     cadastro manual recebe o id 71 (sem pulo)
+   OK     corrigir_ids num banco ja certo: nada a trocar
+   OK     povoamento v7 de novo (idempotencia): sem erro
+   OK     povoamento v7 de novo: nada duplicou (so o historico do cadastro manual)
+
+######## T6  desfazer_dados_ficticios.sql e apagar_so_os_exemplos.sql (continua do T5)
+   OK     desfazer terminou sem erro
+   OK     contagens depois do desfazer (a base real e o cadastro manual ficam)
+   OK     tabela de controle vazia
+   OK     apagar_so_os_exemplos terminou sem erro
+
+######## T7  povoamento v7 por cima de um banco que ja tem a carga v6 (sem corrigir antes)
+   OK     sem erro
+   OK     nada duplicou (o historico traz as 4 linhas da queima de ids + as 531 da carga)
+   OK     o v7 NAO renumera: ids continuam 3..72
+
+######## U0/U1  usuario da aplicacao (usuario_app_LOCAL.sql com senha gerada na hora) e auditoria.sql como agrogestor_app
+   OK     usuario_app_LOCAL.sql rodou
+   OK     privilegios do agrogestor_app (so SELECT, INSERT, UPDATE, DELETE; sem DROP nem TRIGGER)
+   OK     auditoria.sql como agrogestor_app: sem erro
+   OK     coluna usuario mostra agrogestor_app@localhost, e nunca root (USER(), nao CURRENT_USER())
+
+######## U2/U3  o que o usuario da aplicacao (sem ALTER/CREATE) NAO consegue rodar: o script para e nada muda
+   OK     corrigir_ids como agrogestor_app: para com erro
+   OK     mensagem: ALTER command denied (erro 1142, na linha do teste de permissao)
+   OK     nada mudou
+   OK     povoamento v7 como agrogestor_app: para com erro
+   OK     mensagem: CREATE command denied (tabela de controle)
+   OK     nada foi gravado
+
+######## U4/U5  base incompleta: item FORA do conjunto usado e banco so com tabelas
+   OK     BioKiller renomeado (nao e usado pelo povoamento): NAO para
+   OK     o script recriou o BioKiller (insumo 43+1+2 = 46)
+   OK     banco so com tabelas e triggers (sem seeds): tudo vazio
+   OK     povoamento v7 sem a base do Diogo: sem erro
+   OK     resultado
+   OK     contagens (a base do Diogo + dados reais + ficticios)
+   OK     o proprio script criou as 2 colunas de reaplicacao
+   OK     tabela de controle criada, com 87 linhas
+   OK     controle por tabela (aplicacao aplicador compra insumo)
+   OK     ids das aplicacoes
+
+######## V1-V5  a trava PARE do povoamento (grupos parciais, nomes repetidos, clientes que continuam apos erro)
+   OK     V1 area 'Sede' duplicada: para com erro
+   OK     V1 mensagem PARE
+   OK     V1 nada foi gravado
+   OK     V4 aplicador usado pelo povoamento faltando (grupo parcial, 7 de 8): para
+   OK     V4 nada foi gravado
+   OK     V5 insumo usado pelo povoamento renomeado (14 de 15): para
+   OK     V5 nada foi gravado (alem do UPDATE do teste)
+   OK     V2 aplicador FORA do conjunto usado (Jacto 10) apagado: NAO para
+   OK     V2 o script recriou o Jacto 10 (aplicador 10+1+5 = 16)
+   OK     V3 cliente que continua apos o erro (mysql --force): nada gravado, sessao ficou so-leitura
+   OK     V3 os comandos seguintes falharam com 1792 (modo so-leitura)
+
+######## W1-W3  as travas do corrigir_ids.sql
+   OK     W1 linha de talhao sem aplicacao: PARE
+   OK     W1 nada mudou
+   OK     W2 outra tabela ligada a aplicacao: PARE
+   OK     W2 nada mudou
+   OK     W3 banco sem nenhuma aplicacao: sem erro e nada a trocar
+
+######## X1-X2  DELETE em cascata (ON DELETE CASCADE) x DELETE explicito das filhas: o que a auditoria registra
+   OK     X1 DELETE so na aplicacao: as filhas somem por CASCADE
+   OK     X1 ...mas a auditoria so registra o DELETE da aplicacao (o CASCADE nao dispara os triggers das filhas)
+   OK     X2 filhas apagadas antes da aplicacao (como faz o programa e os scripts de desfazer): tudo auditado
+
+================================================================
+RESULTADO: 87 de 87 conferencias OK   |   MySQL 8.0.46-0ubuntu0.24.04.4
+TUDO OK.
+================================================================
